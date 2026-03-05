@@ -101,6 +101,8 @@ client.release()
 
 ## Available Models
 
+This SDK currently supports **real-time streaming models only**. For video generation (text-to-video, image-to-video, video-to-video) and image generation models, use the [Decart TypeScript SDK](https://github.com/DecartAI/sdk).
+
 | Model | Constant | Resolution | FPS |
 |-------|----------|-----------|-----|
 | Mirage | `RealtimeModels.MIRAGE` | 1280x704 | 25 |
