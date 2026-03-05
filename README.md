@@ -27,14 +27,14 @@ The SDK is not yet published to Maven Central. Use a local composite build:
 
 ```
 your-projects/
-  decart-android-sdk/
+  decart-android/
   your-app/
 ```
 
 2. In your app's `settings.gradle.kts`:
 
 ```kotlin
-includeBuild("../decart-android-sdk") {
+includeBuild("../decart-android") {
     dependencySubstitution {
         substitute(module("ai.decart:sdk")).using(project(":sdk"))
     }
