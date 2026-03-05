@@ -168,7 +168,11 @@ client.errors.collect { error ->
 
 ## Sample App
 
-See the [`sample/`](sample/) directory for a full working example with Jetpack Compose UI, camera setup, model selection, and prompt input.
+See the [`sample/`](sample/) directory for a minimal example with Jetpack Compose UI, camera setup, model selection, and prompt input.
+
+## Example App
+
+For a more complete app showcasing real-world use cases -- video restyling, video editing, 90+ style presets, multiple view modes (fullscreen, PIP, split), and swipe-based navigation -- check out the [Decart Android Example App](https://github.com/DecartAI/decart-example-android-realtime).
 
 ## Resources
 
