@@ -41,6 +41,8 @@ camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "
 # Testing
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-test-ext = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestExt" }
+okhttp-mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver", version.ref = "okhttp" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
 
 [bundles]
 compose = [
