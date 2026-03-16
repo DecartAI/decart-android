@@ -501,6 +501,8 @@ class MainActivity : ComponentActivity() {
         var statusText by remember { mutableStateOf("") }
         var errorText by remember { mutableStateOf("") }
         var resultPath by remember { mutableStateOf("") }
+        var uploadProgress by remember { mutableFloatStateOf(0f) }
+        var isUploading by remember { mutableStateOf(false) }
 
         val inputType = selectedModel.inputType
 
@@ -744,7 +746,9 @@ class MainActivity : ComponentActivity() {
                 onClick = {
                     coroutineScope.launch {
                         isSubmitting = true
-                        statusText = "Submitting..."
+                        isUploading = true
+                        uploadProgress = 0f
+                        statusText = "Uploading..."
                         errorText = ""
                         resultPath = ""
 
@@ -811,9 +815,18 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
 
-                                decartClient.queue.submitAndObserve(selectedModel, jobInput).collect { update ->
+                                decartClient.queue.submitAndObserve(
+                                    model = selectedModel,
+                                    input = jobInput,
+                                    onUploadProgress = { bytesWritten, totalBytes ->
+                                        if (totalBytes > 0) {
+                                            uploadProgress = bytesWritten.toFloat() / totalBytes
+                                        }
+                                    },
+                                ).collect { update ->
                                     when (update) {
                                         is QueueJobResult.InProgress -> {
+                                            isUploading = false
                                             statusText = "Status: ${update.status.name}..."
                                         }
                                         is QueueJobResult.Completed -> {
@@ -842,6 +855,7 @@ class MainActivity : ComponentActivity() {
                             }
                         } finally {
                             isSubmitting = false
+                            isUploading = false
                         }
                     }
                 },
@@ -856,6 +870,21 @@ class MainActivity : ComponentActivity() {
                     )
                 } else {
                     Text("Submit Job")
+                }
+            }
+
+            // Upload progress bar
+            if (isUploading && isSubmitting) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        "Uploading... ${(uploadProgress * 100).toInt()}%",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    LinearProgressIndicator(
+                        progress = { uploadProgress },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
             }
 

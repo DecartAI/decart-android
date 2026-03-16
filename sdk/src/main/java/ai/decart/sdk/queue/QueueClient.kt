@@ -17,7 +17,10 @@ import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import okio.Buffer
 import okio.BufferedSink
+import okio.ForwardingSink
+import okio.buffer
 import okio.source
 import java.io.IOException
 import java.util.concurrent.TimeUnit
@@ -86,6 +89,8 @@ class QueueClient internal constructor(
      *
      * @param model The video model to use (e.g., [ai.decart.sdk.VideoModels.LUCY_2_V2V])
      * @param input The job input (e.g., [VideoEditInput])
+     * @param onUploadProgress Optional listener invoked as the request body is written to the network.
+     *   Useful for showing upload progress on large video files.
      * @return [JobSubmitResponse] with `jobId` and initial status
      * @throws InvalidInputException if inputs fail validation
      * @throws QueueSubmitException if the HTTP request fails
@@ -93,8 +98,12 @@ class QueueClient internal constructor(
     suspend fun submit(
         model: VideoModel,
         input: QueueJobInput,
+        onUploadProgress: UploadProgressListener? = null,
     ): JobSubmitResponse = withContext(Dispatchers.IO) {
-        val body = buildMultipartBody(input)
+        var body: RequestBody = buildMultipartBody(input)
+        if (onUploadProgress != null) {
+            body = ProgressRequestBody(body, onUploadProgress)
+        }
         val url = "$baseUrl${model.jobsUrlPath}"
 
         logger.debug("Queue: submitting job to $url")
@@ -192,14 +201,16 @@ class QueueClient internal constructor(
      * @param model The video model
      * @param input The job input
      * @param onStatusChange Optional callback invoked on each status change
+     * @param onUploadProgress Optional listener invoked as the request body is uploaded
      * @return [QueueJobResult.Completed] with video bytes, or [QueueJobResult.Failed] with error
      */
     suspend fun submitAndPoll(
         model: VideoModel,
         input: QueueJobInput,
         onStatusChange: ((JobStatusResponse) -> Unit)? = null,
+        onUploadProgress: UploadProgressListener? = null,
     ): QueueJobResult {
-        val job = submit(model, input)
+        val job = submit(model, input, onUploadProgress)
 
         // Notify initial status
         onStatusChange?.invoke(JobStatusResponse(jobId = job.jobId, status = job.status))
@@ -237,7 +248,9 @@ class QueueClient internal constructor(
      * then a single [QueueJobResult.Completed] or [QueueJobResult.Failed] before completing.
      *
      * ```kotlin
-     * client.queue.submitAndObserve(model, input).collect { update ->
+     * client.queue.submitAndObserve(model, input) { bytesWritten, totalBytes ->
+     *     showUploadProgress(bytesWritten, totalBytes)
+     * }.collect { update ->
      *     when (update) {
      *         is QueueJobResult.InProgress -> showProgress(update.status)
      *         is QueueJobResult.Completed  -> saveVideo(update.data)
@@ -248,12 +261,14 @@ class QueueClient internal constructor(
      *
      * @param model The video model
      * @param input The job input
+     * @param onUploadProgress Optional listener invoked as the request body is uploaded
      */
     fun submitAndObserve(
         model: VideoModel,
         input: QueueJobInput,
+        onUploadProgress: UploadProgressListener? = null,
     ): Flow<QueueJobResult> = flow {
-        val job = submit(model, input)
+        val job = submit(model, input, onUploadProgress)
         emit(QueueJobResult.InProgress(jobId = job.jobId, status = job.status))
 
         delay(INITIAL_DELAY_MS)
@@ -423,6 +438,37 @@ class QueueClient internal constructor(
     }
 
     private fun buildUserAgent(): String = "decart-android-sdk/$SDK_VERSION lang/kotlin"
+
+    /**
+     * [RequestBody] wrapper that reports write progress to an [UploadProgressListener].
+     *
+     * Intercepts all writes through a [ForwardingSink], counting bytes as they pass
+     * through to the underlying sink (and ultimately the network).
+     */
+    private class ProgressRequestBody(
+        private val delegate: RequestBody,
+        private val listener: UploadProgressListener,
+    ) : RequestBody() {
+        override fun contentType() = delegate.contentType()
+        override fun contentLength() = delegate.contentLength()
+        override fun isOneShot() = delegate.isOneShot()
+
+        override fun writeTo(sink: BufferedSink) {
+            val totalBytes = contentLength()
+            val countingSink = object : ForwardingSink(sink) {
+                private var bytesWritten = 0L
+
+                override fun write(source: Buffer, byteCount: Long) {
+                    super.write(source, byteCount)
+                    bytesWritten += byteCount
+                    listener.onProgress(bytesWritten, totalBytes)
+                }
+            }
+            val bufferedSink = countingSink.buffer()
+            delegate.writeTo(bufferedSink)
+            bufferedSink.flush()
+        }
+    }
 
     companion object {
         /** Polling interval between status checks (matches reference SDKs). */

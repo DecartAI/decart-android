@@ -47,8 +47,10 @@ class DecartClient(
     context: Context,
     config: DecartClientConfig
 ) {
+    private val apiKey = config.apiKey.trim()
+
     init {
-        require(config.apiKey.isNotBlank()) {
+        require(apiKey.isNotBlank()) {
             "Missing API key. Pass apiKey to DecartClientConfig or set the DECART_API_KEY environment variable."
         }
     }
@@ -61,7 +63,7 @@ class DecartClient(
     val realtime: RealTimeClient = RealTimeClient(
         context = context,
         config = RealTimeClientConfig(
-            apiKey = config.apiKey,
+            apiKey = apiKey,
             baseUrl = config.baseUrl,
             logger = logger
         )
@@ -74,7 +76,7 @@ class DecartClient(
      * Supports all batch video models (e.g., [VideoModels.LUCY_2_V2V]).
      */
     val queue: QueueClient = QueueClient(
-        apiKey = config.apiKey,
+        apiKey = apiKey,
         baseUrl = config.httpBaseUrl,
         logger = logger,
         contentResolver = context.applicationContext.contentResolver,

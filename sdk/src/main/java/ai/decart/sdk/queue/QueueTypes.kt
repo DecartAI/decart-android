@@ -4,6 +4,30 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 // ---------------------------------------------------------------------------
+// Upload progress
+// ---------------------------------------------------------------------------
+
+/**
+ * Listener for tracking upload progress during job submission.
+ *
+ * Called on the OkHttp I/O thread as bytes are written to the network.
+ * Implementations should be lightweight — avoid blocking or heavy UI work directly.
+ *
+ * @see QueueClient.submit
+ * @see QueueClient.submitAndPoll
+ * @see QueueClient.submitAndObserve
+ */
+fun interface UploadProgressListener {
+    /**
+     * Called as bytes are written to the upload stream.
+     *
+     * @param bytesWritten Total bytes written so far
+     * @param totalBytes Total content length, or -1 if unknown (e.g., [FileInput.FromInputStream])
+     */
+    fun onProgress(bytesWritten: Long, totalBytes: Long)
+}
+
+// ---------------------------------------------------------------------------
 // Job status
 // ---------------------------------------------------------------------------
 

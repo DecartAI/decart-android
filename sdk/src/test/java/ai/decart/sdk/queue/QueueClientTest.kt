@@ -404,6 +404,196 @@ class QueueClientTest {
         assertNull(fields["prompt"])
     }
 
+    // -- upload progress --------------------------------------------------
+
+    @Test
+    fun `submit calls onUploadProgress with increasing bytesWritten`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"job_id":"j-1","status":"pending"}"""))
+
+        val progressUpdates = mutableListOf<Pair<Long, Long>>()
+        client.submit(model, input(1, 2, 3, 4, 5)) { bytesWritten, totalBytes ->
+            progressUpdates.add(bytesWritten to totalBytes)
+        }
+
+        assertTrue("Expected at least one progress callback", progressUpdates.isNotEmpty())
+        // bytesWritten should be monotonically increasing
+        for (i in 1 until progressUpdates.size) {
+            assertTrue(
+                "bytesWritten should increase",
+                progressUpdates[i].first >= progressUpdates[i - 1].first,
+            )
+        }
+        // Last callback should have bytesWritten == totalBytes
+        val last = progressUpdates.last()
+        assertEquals(last.second, last.first)
+        // totalBytes should be consistent
+        val totalBytes = progressUpdates.first().second
+        assertTrue("totalBytes should be positive", totalBytes > 0)
+        progressUpdates.forEach { assertEquals(totalBytes, it.second) }
+    }
+
+    @Test
+    fun `submit without onUploadProgress still works`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"job_id":"j-1","status":"pending"}"""))
+
+        val response = client.submit(model, input())
+
+        assertEquals("j-1", response.jobId)
+    }
+
+    @Test
+    fun `submitAndPoll calls onUploadProgress`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"job_id":"j-1","status":"pending"}"""))
+        server.enqueue(MockResponse().setBody("""{"job_id":"j-1","status":"completed"}"""))
+        server.enqueue(MockResponse().setBody(Buffer().write(byteArrayOf(42))))
+
+        var progressCalled = false
+        client.submitAndPoll(
+            model = model,
+            input = input(1, 2, 3),
+            onUploadProgress = { _, _ -> progressCalled = true },
+        )
+
+        assertTrue("onUploadProgress should have been called", progressCalled)
+    }
+
+    @Test
+    fun `submitAndObserve calls onUploadProgress`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"job_id":"j-1","status":"pending"}"""))
+        server.enqueue(MockResponse().setBody("""{"job_id":"j-1","status":"completed"}"""))
+        server.enqueue(MockResponse().setBody(Buffer().write(byteArrayOf(99))))
+
+        var progressCalled = false
+        client.submitAndObserve(
+            model = model,
+            input = input(1, 2, 3),
+            onUploadProgress = { _, _ -> progressCalled = true },
+        ).toList()
+
+        assertTrue("onUploadProgress should have been called", progressCalled)
+    }
+
+    @Test
+    fun `upload progress reports totalBytes as -1 for InputStream input`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"job_id":"j-1","status":"pending"}"""))
+
+        val streamInput = VideoEditInput(
+            prompt = "test",
+            data = FileInput.fromInputStream(byteArrayOf(1, 2, 3).inputStream(), "video/mp4"),
+        )
+
+        val progressUpdates = mutableListOf<Pair<Long, Long>>()
+        client.submit(model, streamInput) { bytesWritten, totalBytes ->
+            progressUpdates.add(bytesWritten to totalBytes)
+        }
+
+        assertTrue("Expected progress callbacks", progressUpdates.isNotEmpty())
+        progressUpdates.forEach { (_, totalBytes) ->
+            assertEquals("totalBytes should be -1 for unknown length", -1L, totalBytes)
+        }
+    }
+
+    @Test
+    fun `upload progress fires even when server returns error`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(500).setBody("internal error"))
+
+        val progressUpdates = mutableListOf<Pair<Long, Long>>()
+        try {
+            client.submit(model, input(1, 2, 3)) { bytesWritten, totalBytes ->
+                progressUpdates.add(bytesWritten to totalBytes)
+            }
+            fail("Should have thrown")
+        } catch (_: QueueSubmitException) {
+            // expected
+        }
+
+        assertTrue("Progress should fire before error response is read", progressUpdates.isNotEmpty())
+    }
+
+    @Test
+    fun `upload progress bytesWritten never exceeds totalBytes`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"job_id":"j-1","status":"pending"}"""))
+
+        // Use a larger payload to get multiple progress callbacks
+        val largePayload = ByteArray(8192) { it.toByte() }
+        val largeInput = VideoEditInput(
+            prompt = "large upload",
+            data = FileInput.fromBytes(largePayload, "video/mp4"),
+        )
+
+        val progressUpdates = mutableListOf<Pair<Long, Long>>()
+        client.submit(model, largeInput) { bytesWritten, totalBytes ->
+            progressUpdates.add(bytesWritten to totalBytes)
+        }
+
+        assertTrue("Expected multiple progress callbacks", progressUpdates.size > 1)
+        val totalBytes = progressUpdates.first().second
+        assertTrue("totalBytes should be positive", totalBytes > 0)
+        progressUpdates.forEach { (bytesWritten, total) ->
+            assertEquals("totalBytes should be consistent", totalBytes, total)
+            assertTrue("bytesWritten ($bytesWritten) should not exceed totalBytes ($total)", bytesWritten <= total)
+        }
+        // First should be partial, last should be complete
+        assertTrue("First callback should be partial", progressUpdates.first().first < totalBytes)
+        assertEquals("Last callback should equal totalBytes", totalBytes, progressUpdates.last().first)
+    }
+
+    @Test
+    fun `upload progress tracks entire multipart body with multiple files`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"job_id":"j-1","status":"pending"}"""))
+
+        val videoBytes = ByteArray(4096) { it.toByte() }
+        val refBytes = ByteArray(2048) { it.toByte() }
+        val multiFileInput = VideoEditInput(
+            prompt = "with ref",
+            data = FileInput.fromBytes(videoBytes, "video/mp4"),
+            referenceImage = FileInput.fromBytes(refBytes, "image/png"),
+        )
+
+        val progressUpdates = mutableListOf<Pair<Long, Long>>()
+        client.submit(model, multiFileInput) { bytesWritten, totalBytes ->
+            progressUpdates.add(bytesWritten to totalBytes)
+        }
+
+        assertTrue("Expected progress callbacks", progressUpdates.isNotEmpty())
+        val totalBytes = progressUpdates.first().second
+        // Total should include both files plus multipart overhead
+        assertTrue(
+            "totalBytes ($totalBytes) should exceed combined file sizes (${videoBytes.size + refBytes.size})",
+            totalBytes > videoBytes.size + refBytes.size,
+        )
+        assertEquals("Final bytesWritten should equal totalBytes", totalBytes, progressUpdates.last().first)
+    }
+
+    @Test
+    fun `upload progress works with FromFile input`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"job_id":"j-1","status":"pending"}"""))
+
+        val tempFile = java.io.File.createTempFile("test-upload", ".mp4")
+        try {
+            tempFile.writeBytes(ByteArray(1024) { it.toByte() })
+            val fileInput = VideoEditInput(
+                prompt = "file test",
+                data = FileInput.fromFile(tempFile),
+            )
+
+            val progressUpdates = mutableListOf<Pair<Long, Long>>()
+            client.submit(model, fileInput) { bytesWritten, totalBytes ->
+                progressUpdates.add(bytesWritten to totalBytes)
+            }
+
+            assertTrue("Expected progress callbacks", progressUpdates.isNotEmpty())
+            assertTrue("totalBytes should be positive", progressUpdates.first().second > 0)
+            assertEquals(
+                "Final bytesWritten should equal totalBytes",
+                progressUpdates.last().second,
+                progressUpdates.last().first,
+            )
+        } finally {
+            tempFile.delete()
+        }
+    }
+
     // -- submit with new input types -------------------------------------
 
     @Test
