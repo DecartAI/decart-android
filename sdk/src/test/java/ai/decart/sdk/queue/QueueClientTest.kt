@@ -193,7 +193,7 @@ class QueueClientTest {
         server.enqueue(MockResponse().setBody(Buffer().write(byteArrayOf(42))))
 
         val statuses = mutableListOf<JobStatus>()
-        val result = client.submitAndPoll(model, input()) { statuses.add(it.status) }
+        val result = client.submitAndPoll(model, input(), onStatusChange = { statuses.add(it.status) })
 
         assertTrue(result is QueueJobResult.Completed)
         assertArrayEquals(byteArrayOf(42), (result as QueueJobResult.Completed).data)
