@@ -478,6 +478,6 @@ class QueueClient internal constructor(
         private const val INITIAL_DELAY_MS = 500L
 
         /** SDK version reported in User-Agent header. */
-        internal const val SDK_VERSION = "0.1.0"
+        internal const val SDK_VERSION = "0.3.0"
     }
 }
