@@ -199,62 +199,6 @@ data class VideoRestyleInput(
 }
 
 /**
- * Input for text-to-video models (`lucy-pro-t2v`).
- *
- * Generates video purely from a text prompt — no media file required.
- *
- * @property prompt Text prompt describing the video to generate (required, max 1000 chars)
- * @property seed Optional seed for reproducible output (0–4294967295)
- * @property resolution Output resolution ("720p" or "480p", default "720p")
- * @property orientation Video orientation ("landscape" or "portrait", default "landscape")
- * @property enhancePrompt Whether to AI-enhance the prompt (default true)
- */
-data class TextToVideoInput(
-    val prompt: String,
-    val seed: Int? = null,
-    val resolution: String? = null,
-    val orientation: String? = null,
-    val enhancePrompt: Boolean? = null,
-) : QueueJobInput {
-
-    override fun toFormFields(): Map<String, Any?> = buildMap {
-        put("prompt", prompt)
-        seed?.let { put("seed", it.toString()) }
-        resolution?.let { put("resolution", it) }
-        orientation?.let { put("orientation", it) }
-        enhancePrompt?.let { put("enhance_prompt", it.toString()) }
-    }
-}
-
-/**
- * Input for image-to-video models (`lucy-pro-i2v`, `lucy-dev-i2v`).
- *
- * Generates a video from a still image guided by a text prompt.
- *
- * @property prompt Text prompt describing the desired video (required, max 1000 chars)
- * @property data Image file to animate (required)
- * @property seed Optional seed for reproducible output (0–4294967295)
- * @property resolution Output resolution ("720p" or "480p", default "720p")
- * @property enhancePrompt Whether to AI-enhance the prompt (default true)
- */
-data class ImageToVideoInput(
-    val prompt: String,
-    val data: FileInput,
-    val seed: Int? = null,
-    val resolution: String? = null,
-    val enhancePrompt: Boolean? = null,
-) : QueueJobInput {
-
-    override fun toFormFields(): Map<String, Any?> = buildMap {
-        put("prompt", prompt)
-        put("data", data)
-        seed?.let { put("seed", it.toString()) }
-        resolution?.let { put("resolution", it) }
-        enhancePrompt?.let { put("enhance_prompt", it.toString()) }
-    }
-}
-
-/**
  * A point in a motion trajectory for [MotionVideoInput].
  *
  * Coordinates are normalized to 0–1 range relative to the image dimensions.

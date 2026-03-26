@@ -493,8 +493,6 @@ class MainActivity : ComponentActivity() {
         var referenceImageUri by remember { mutableStateOf<Uri?>(null) }
         // Restyle: prompt vs reference image toggle
         var restyleUsePrompt by remember { mutableStateOf(true) }
-        // T2V: orientation
-        var orientation by remember { mutableStateOf("landscape") }
         // Motion: trajectory JSON
         var trajectoryJson by remember { mutableStateOf("") }
         var isSubmitting by remember { mutableStateOf(false) }
@@ -563,8 +561,7 @@ class MainActivity : ComponentActivity() {
 
             // ---------- Data file picker (video or image depending on model) ----------
             val needsVideoFile = inputType == ModelInputType.VIDEO_EDIT || inputType == ModelInputType.VIDEO_RESTYLE
-            val needsImageFile = inputType == ModelInputType.IMAGE_TO_VIDEO || inputType == ModelInputType.MOTION_VIDEO
-            // TEXT_TO_VIDEO needs no file
+            val needsImageFile = inputType == ModelInputType.MOTION_VIDEO
 
             if (needsVideoFile) {
                 Row(
@@ -583,6 +580,7 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+
             if (needsImageFile) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -622,7 +620,7 @@ class MainActivity : ComponentActivity() {
 
             // ---------- Prompt field ----------
             val showPrompt = when (inputType) {
-                ModelInputType.VIDEO_EDIT, ModelInputType.TEXT_TO_VIDEO, ModelInputType.IMAGE_TO_VIDEO -> true
+                ModelInputType.VIDEO_EDIT -> true
                 ModelInputType.VIDEO_RESTYLE -> restyleUsePrompt
                 ModelInputType.MOTION_VIDEO -> false
             }
@@ -672,27 +670,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // ---------- Orientation (TEXT_TO_VIDEO only) ----------
-            if (inputType == ModelInputType.TEXT_TO_VIDEO) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Orientation:", style = MaterialTheme.typography.bodyMedium)
-                    FilterChip(
-                        selected = orientation == "landscape",
-                        onClick = { orientation = "landscape" },
-                        label = { Text("Landscape") }
-                    )
-                    FilterChip(
-                        selected = orientation == "portrait",
-                        onClick = { orientation = "portrait" },
-                        label = { Text("Portrait") }
-                    )
-                }
-            }
-
             // ---------- Trajectory JSON (MOTION_VIDEO only) ----------
             if (inputType == ModelInputType.MOTION_VIDEO) {
                 OutlinedTextField(
@@ -718,7 +695,7 @@ class MainActivity : ComponentActivity() {
 
             // ---------- Enhance prompt toggle ----------
             val showEnhance = when (inputType) {
-                ModelInputType.VIDEO_EDIT, ModelInputType.TEXT_TO_VIDEO, ModelInputType.IMAGE_TO_VIDEO -> true
+                ModelInputType.VIDEO_EDIT -> true
                 ModelInputType.VIDEO_RESTYLE -> restyleUsePrompt
                 ModelInputType.MOTION_VIDEO -> false
             }
@@ -737,8 +714,6 @@ class MainActivity : ComponentActivity() {
             val canSubmit = !isSubmitting && apiKey.isNotBlank() && when (inputType) {
                 ModelInputType.VIDEO_EDIT -> dataUri != null
                 ModelInputType.VIDEO_RESTYLE -> dataUri != null && (if (restyleUsePrompt) prompt.isNotBlank() else referenceImageUri != null)
-                ModelInputType.TEXT_TO_VIDEO -> prompt.isNotBlank()
-                ModelInputType.IMAGE_TO_VIDEO -> dataUri != null && prompt.isNotBlank()
                 ModelInputType.MOTION_VIDEO -> dataUri != null && trajectoryJson.isNotBlank()
             }
 
@@ -784,18 +759,6 @@ class MainActivity : ComponentActivity() {
                                             seed = seed.toIntOrNull(),
                                         )
                                     }
-                                    ModelInputType.TEXT_TO_VIDEO -> TextToVideoInput(
-                                        prompt = prompt,
-                                        seed = seed.toIntOrNull(),
-                                        orientation = orientation,
-                                        enhancePrompt = enhancePrompt,
-                                    )
-                                    ModelInputType.IMAGE_TO_VIDEO -> ImageToVideoInput(
-                                        prompt = prompt,
-                                        data = FileInput.fromUri(dataUri!!),
-                                        seed = seed.toIntOrNull(),
-                                        enhancePrompt = enhancePrompt,
-                                    )
                                     ModelInputType.MOTION_VIDEO -> {
                                         val points = mutableListOf<TrajectoryPoint>()
                                         val arr = org.json.JSONArray(trajectoryJson)

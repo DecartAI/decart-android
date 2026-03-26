@@ -140,9 +140,7 @@ client.queue.submitAndObserve(VideoModels.LUCY_2_V2V, input).collect { update ->
 ```kotlin
 import ai.decart.sdk.VideoModels
 import ai.decart.sdk.queue.FileInput
-import ai.decart.sdk.queue.ImageToVideoInput
 import ai.decart.sdk.queue.MotionVideoInput
-import ai.decart.sdk.queue.TextToVideoInput
 import ai.decart.sdk.queue.TrajectoryPoint
 import ai.decart.sdk.queue.VideoRestyleInput
 
@@ -153,21 +151,6 @@ val restyle = VideoRestyleInput(
     seed = 7,
 )
 client.queue.submit(VideoModels.LUCY_RESTYLE_V2V, restyle)
-
-// Text-to-video
-val t2v = TextToVideoInput(
-    prompt = "Drone shot over snowy mountains at sunrise",
-    orientation = "landscape",
-    enhancePrompt = true,
-)
-client.queue.submit(VideoModels.LUCY_PRO_T2V, t2v)
-
-// Image-to-video
-val i2v = ImageToVideoInput(
-    prompt = "Slow cinematic push-in",
-    data = FileInput.fromUri(imageUri),
-)
-client.queue.submit(VideoModels.LUCY_PRO_I2V, i2v)
 
 // Motion video (trajectory-guided)
 val motion = MotionVideoInput(
@@ -198,19 +181,13 @@ client.queue.submit(VideoModels.LUCY_MOTION, motion)
 |-------|----------|------------|------------|-----|
 | Lucy 2 V2V | `VideoModels.LUCY_2_V2V` | `/v1/jobs/lucy-2-v2v` | 1280x720 | 20 |
 | Lucy Pro V2V | `VideoModels.LUCY_PRO_V2V` | `/v1/jobs/lucy-pro-v2v` | 1280x704 | 25 |
-| Lucy Fast V2V | `VideoModels.LUCY_FAST_V2V` | `/v1/jobs/lucy-fast-v2v` | 1280x704 | 25 |
 | Lucy Restyle V2V | `VideoModels.LUCY_RESTYLE_V2V` | `/v1/jobs/lucy-restyle-v2v` | 1280x704 | 25 |
-| Lucy Pro T2V | `VideoModels.LUCY_PRO_T2V` | `/v1/jobs/lucy-pro-t2v` | 1280x704 | 25 |
-| Lucy Pro I2V | `VideoModels.LUCY_PRO_I2V` | `/v1/jobs/lucy-pro-i2v` | 1280x704 | 25 |
-| Lucy Dev I2V | `VideoModels.LUCY_DEV_I2V` | `/v1/jobs/lucy-dev-i2v` | 1280x704 | 25 |
 | Lucy Motion | `VideoModels.LUCY_MOTION` | `/v1/jobs/lucy-motion` | 1280x704 | 25 |
 
 Typed input helpers:
 
-- `VideoEditInput` (`lucy-2-v2v`, `lucy-pro-v2v`, `lucy-fast-v2v`)
+- `VideoEditInput` (`lucy-2-v2v`, `lucy-pro-v2v`)
 - `VideoRestyleInput` (`lucy-restyle-v2v`)
-- `TextToVideoInput` (`lucy-pro-t2v`)
-- `ImageToVideoInput` (`lucy-pro-i2v`, `lucy-dev-i2v`)
 - `MotionVideoInput` (`lucy-motion`)
 
 ## API Reference
@@ -231,8 +208,6 @@ Typed input helpers:
 | `QueueClient` | Batch queue client (`submit`, `status`, `result`, `submitAndPoll`, `submitAndObserve`) |
 | `VideoEditInput` | Typed queue input for Lucy 2 V2V payload |
 | `VideoRestyleInput` | Typed queue input for Lucy Restyle V2V |
-| `TextToVideoInput` | Typed queue input for Lucy Pro T2V |
-| `ImageToVideoInput` | Typed queue input for Lucy Pro/Dev I2V |
 | `MotionVideoInput` | Typed queue input for Lucy Motion |
 | `FileInput` | File wrappers for `Uri`, `File`, `ByteArray`, `InputStream` |
 | `DecartError` | Error with code, message, and optional cause |
