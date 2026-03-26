@@ -335,40 +335,6 @@ class QueueClientTest {
         assertTrue(fields["data"] is FileInput)
     }
 
-    // -- TextToVideoInput toFormFields ------------------------------------
-
-    @Test
-    fun `TextToVideoInput produces correct fields with orientation`() {
-        val input = TextToVideoInput(
-            prompt = "a cat",
-            seed = 99,
-            orientation = "portrait",
-            enhancePrompt = false,
-        )
-        val fields = input.toFormFields()
-        assertEquals("a cat", fields["prompt"])
-        assertEquals("99", fields["seed"])
-        assertEquals("portrait", fields["orientation"])
-        assertEquals("false", fields["enhance_prompt"])
-        assertNull(fields["data"])
-    }
-
-    // -- ImageToVideoInput toFormFields -----------------------------------
-
-    @Test
-    fun `ImageToVideoInput produces correct fields`() {
-        val data = FileInput.fromBytes(byteArrayOf(1), "image/png")
-        val input = ImageToVideoInput(
-            prompt = "zoom in",
-            data = data,
-            seed = 5,
-        )
-        val fields = input.toFormFields()
-        assertEquals("zoom in", fields["prompt"])
-        assertEquals(data, fields["data"])
-        assertEquals("5", fields["seed"])
-    }
-
     // -- MotionVideoInput validation + fields -----------------------------
 
     @Test
@@ -402,6 +368,26 @@ class QueueClientTest {
         assertTrue(json.contains("\"frame\":14"))
         assertEquals("42", fields["seed"])
         assertNull(fields["prompt"])
+    }
+
+    // -- submit with MotionVideoInput -------------------------------------
+
+    @Test
+    fun `submit with MotionVideoInput sends trajectory JSON`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"job_id":"j-1","status":"pending"}"""))
+
+        val input = MotionVideoInput(
+            data = FileInput.fromBytes(byteArrayOf(10), "image/png"),
+            trajectory = listOf(
+                TrajectoryPoint(0, 0.1f, 0.2f),
+                TrajectoryPoint(7, 0.9f, 0.8f),
+            ),
+        )
+        client.submit(VideoModels.LUCY_MOTION, input)
+
+        val body = server.takeRequest().body.readUtf8()
+        assertTrue("trajectory missing", body.contains("frame"))
+        assertTrue("trajectory missing x", body.contains("0.1"))
     }
 
     // -- upload progress --------------------------------------------------
@@ -592,38 +578,6 @@ class QueueClientTest {
         } finally {
             tempFile.delete()
         }
-    }
-
-    // -- submit with new input types -------------------------------------
-
-    @Test
-    fun `submit with TextToVideoInput sends no data field`() = runTest {
-        server.enqueue(MockResponse().setBody("""{"job_id":"j-1","status":"pending"}"""))
-
-        val input = TextToVideoInput(prompt = "sunset", orientation = "landscape")
-        client.submit(VideoModels.LUCY_PRO_T2V, input)
-
-        val body = server.takeRequest().body.readUtf8()
-        assertTrue("prompt missing", body.contains("sunset"))
-        assertTrue("orientation missing", body.contains("landscape"))
-    }
-
-    @Test
-    fun `submit with MotionVideoInput sends trajectory JSON`() = runTest {
-        server.enqueue(MockResponse().setBody("""{"job_id":"j-1","status":"pending"}"""))
-
-        val input = MotionVideoInput(
-            data = FileInput.fromBytes(byteArrayOf(10), "image/png"),
-            trajectory = listOf(
-                TrajectoryPoint(0, 0.1f, 0.2f),
-                TrajectoryPoint(7, 0.9f, 0.8f),
-            ),
-        )
-        client.submit(VideoModels.LUCY_MOTION, input)
-
-        val body = server.takeRequest().body.readUtf8()
-        assertTrue("trajectory missing", body.contains("frame"))
-        assertTrue("trajectory missing x", body.contains("0.1"))
     }
 
 }

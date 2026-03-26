@@ -9,10 +9,6 @@ enum class ModelInputType {
     VIDEO_EDIT,
     /** Video + (prompt XOR reference image) ([ai.decart.sdk.queue.VideoRestyleInput]) */
     VIDEO_RESTYLE,
-    /** Prompt only, no media file ([ai.decart.sdk.queue.TextToVideoInput]) */
-    TEXT_TO_VIDEO,
-    /** Image + prompt ([ai.decart.sdk.queue.ImageToVideoInput]) */
-    IMAGE_TO_VIDEO,
     /** Image + trajectory ([ai.decart.sdk.queue.MotionVideoInput]) */
     MOTION_VIDEO,
 }
@@ -52,20 +48,8 @@ object VideoModels {
     /** Video-to-video (Pro quality). Output: 1280x704, 25fps. */
     val LUCY_PRO_V2V = VideoModel("lucy-pro-v2v", "/v1/jobs/lucy-pro-v2v", 25, 1280, 704, ModelInputType.VIDEO_EDIT)
 
-    /** Video-to-video (Fast quality). Output: 1280x704, 25fps. */
-    val LUCY_FAST_V2V = VideoModel("lucy-fast-v2v", "/v1/jobs/lucy-fast-v2v", 25, 1280, 704, ModelInputType.VIDEO_EDIT)
-
     /** Video restyling with prompt or reference image. Output: 1280x704, 25fps. */
     val LUCY_RESTYLE_V2V = VideoModel("lucy-restyle-v2v", "/v1/jobs/lucy-restyle-v2v", 25, 1280, 704, ModelInputType.VIDEO_RESTYLE)
-
-    /** Text-to-video (Pro quality). Output: 1280x704, 25fps. */
-    val LUCY_PRO_T2V = VideoModel("lucy-pro-t2v", "/v1/jobs/lucy-pro-t2v", 25, 1280, 704, ModelInputType.TEXT_TO_VIDEO)
-
-    /** Image-to-video (Pro quality). Output: 1280x704, 25fps. */
-    val LUCY_PRO_I2V = VideoModel("lucy-pro-i2v", "/v1/jobs/lucy-pro-i2v", 25, 1280, 704, ModelInputType.IMAGE_TO_VIDEO)
-
-    /** Image-to-video (Dev quality). Output: 1280x704, 25fps. */
-    val LUCY_DEV_I2V = VideoModel("lucy-dev-i2v", "/v1/jobs/lucy-dev-i2v", 25, 1280, 704, ModelInputType.IMAGE_TO_VIDEO)
 
     /** Image-to-motion-video with trajectory. Output: 1280x704, 25fps. */
     val LUCY_MOTION = VideoModel("lucy-motion", "/v1/jobs/lucy-motion", 25, 1280, 704, ModelInputType.MOTION_VIDEO)
@@ -77,11 +61,7 @@ object VideoModels {
     val all: List<VideoModel> = listOf(
         LUCY_2_V2V,
         LUCY_PRO_V2V,
-        LUCY_FAST_V2V,
         LUCY_RESTYLE_V2V,
-        LUCY_PRO_T2V,
-        LUCY_PRO_I2V,
-        LUCY_DEV_I2V,
         LUCY_MOTION,
     )
 }
