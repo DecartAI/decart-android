@@ -126,7 +126,7 @@ class RealTimeClient(
         }
         val factory = peerConnectionFactory!!
 
-        val isAvatarLive = options.model.name == "live_avatar"
+        val isAvatarLive = options.model.name == "live-avatar" || options.model.name == "live_avatar"
 
         // For live_avatar without user-provided audio: create AudioStreamManager
         var inputAudioTrack = localAudioTrack

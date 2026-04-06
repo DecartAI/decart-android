@@ -700,7 +700,7 @@ class WebRTCConnection(private val callbacks: ConnectionCallbacks = ConnectionCa
         if (localVideoTrack != null || localAudioTrack != null) {
             // For live_avatar: add receive-only video transceiver
             // (sends audio only via addTrack, receives video + audio from server)
-            if (callbacks.modelName == "live_avatar") {
+            if (callbacks.modelName == "live-avatar" || callbacks.modelName == "live_avatar") {
                 pc.addTransceiver(
                     MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO,
                     RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.RECV_ONLY)
