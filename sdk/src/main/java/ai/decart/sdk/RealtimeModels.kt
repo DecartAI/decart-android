@@ -18,6 +18,11 @@ object RealtimeModels {
     val LUCY_RESTYLE_2 = RealtimeModel("lucy-restyle-2", "/v1/stream", 22, 1280, 704)
     val LIVE_AVATAR = RealtimeModel("live-avatar", "/v1/stream", 25, 1280, 720)
 
+    // Latest aliases (server-side resolution)
+    val LUCY_LATEST = RealtimeModel("lucy-latest", "/v1/stream", 20, 1088, 624)
+    val LUCY_VTON_LATEST = RealtimeModel("lucy-vton-latest", "/v1/stream", 20, 1088, 624)
+    val LUCY_RESTYLE_LATEST = RealtimeModel("lucy-restyle-latest", "/v1/stream", 22, 1280, 704)
+
     // Deprecated models (old names, still work on the API)
     @Deprecated("Use LUCY_RESTYLE instead", replaceWith = ReplaceWith("LUCY_RESTYLE"))
     val MIRAGE = RealtimeModel("mirage", "/v1/stream", 25, 1280, 704)
@@ -40,6 +45,10 @@ object RealtimeModels {
         "lucy-restyle" -> LUCY_RESTYLE
         "lucy-restyle-2" -> LUCY_RESTYLE_2
         "live-avatar" -> LIVE_AVATAR
+        // Latest aliases
+        "lucy-latest" -> LUCY_LATEST
+        "lucy-vton-latest" -> LUCY_VTON_LATEST
+        "lucy-restyle-latest" -> LUCY_RESTYLE_LATEST
         // Deprecated names
         @Suppress("DEPRECATION") "mirage" -> MIRAGE
         @Suppress("DEPRECATION") "mirage_v2" -> MIRAGE_V2
@@ -52,5 +61,6 @@ object RealtimeModels {
     /** All available realtime models (canonical only) */
     val all: List<RealtimeModel> = listOf(
         LUCY, LUCY_2, LUCY_2_1, LUCY_2_1_VTON, LUCY_RESTYLE, LUCY_RESTYLE_2, LIVE_AVATAR,
+        LUCY_LATEST, LUCY_VTON_LATEST, LUCY_RESTYLE_LATEST,
     )
 }

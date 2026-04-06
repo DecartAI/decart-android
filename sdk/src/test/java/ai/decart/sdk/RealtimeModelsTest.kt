@@ -7,7 +7,7 @@ class RealtimeModelsTest {
 
     @Test
     fun `all models have correct count`() {
-        assertEquals(7, RealtimeModels.all.size)
+        assertEquals(10, RealtimeModels.all.size)
     }
 
     @Test
@@ -19,6 +19,13 @@ class RealtimeModelsTest {
         assertEquals(RealtimeModels.LUCY_RESTYLE, RealtimeModels.fromName("lucy-restyle"))
         assertEquals(RealtimeModels.LUCY_RESTYLE_2, RealtimeModels.fromName("lucy-restyle-2"))
         assertEquals(RealtimeModels.LIVE_AVATAR, RealtimeModels.fromName("live-avatar"))
+    }
+
+    @Test
+    fun `fromName returns correct model for latest aliases`() {
+        assertEquals(RealtimeModels.LUCY_LATEST, RealtimeModels.fromName("lucy-latest"))
+        assertEquals(RealtimeModels.LUCY_VTON_LATEST, RealtimeModels.fromName("lucy-vton-latest"))
+        assertEquals(RealtimeModels.LUCY_RESTYLE_LATEST, RealtimeModels.fromName("lucy-restyle-latest"))
     }
 
     @Test
