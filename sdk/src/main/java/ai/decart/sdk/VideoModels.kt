@@ -42,26 +42,48 @@ data class VideoModel(
  * ```
  */
 object VideoModels {
+    // Canonical models
+    /** Video-to-video clip editing. Output: 1280x704, 25fps. */
+    val LUCY_CLIP = VideoModel("lucy-clip", "/v1/jobs/lucy-clip", 25, 1280, 704, ModelInputType.VIDEO_EDIT)
+
     /** Video-to-video editing with optional reference image. Output: 1280x720, 20fps. */
-    val LUCY_2_V2V = VideoModel("lucy-2-v2v", "/v1/jobs/lucy-2-v2v", 20, 1280, 720, ModelInputType.VIDEO_EDIT)
+    val LUCY_2 = VideoModel("lucy-2", "/v1/jobs/lucy-2", 20, 1280, 720, ModelInputType.VIDEO_EDIT)
 
-    /** Video-to-video (Pro quality). Output: 1280x704, 25fps. */
-    val LUCY_PRO_V2V = VideoModel("lucy-pro-v2v", "/v1/jobs/lucy-pro-v2v", 25, 1280, 704, ModelInputType.VIDEO_EDIT)
+    /** Lucy 2.1 video editing with optional reference image. Output: 1088x624, 20fps. */
+    val LUCY_2_1 = VideoModel("lucy-2.1", "/v1/jobs/lucy-2.1", 20, 1088, 624, ModelInputType.VIDEO_EDIT)
 
-    /** Video restyling with prompt or reference image. Output: 1280x704, 25fps. */
-    val LUCY_RESTYLE_V2V = VideoModel("lucy-restyle-v2v", "/v1/jobs/lucy-restyle-v2v", 25, 1280, 704, ModelInputType.VIDEO_RESTYLE)
+    /** Video restyling with prompt or reference image. Output: 1280x704, 22fps. */
+    val LUCY_RESTYLE_2 = VideoModel("lucy-restyle-2", "/v1/jobs/lucy-restyle-2", 22, 1280, 704, ModelInputType.VIDEO_RESTYLE)
 
     /** Image-to-motion-video with trajectory. Output: 1280x704, 25fps. */
     val LUCY_MOTION = VideoModel("lucy-motion", "/v1/jobs/lucy-motion", 25, 1280, 704, ModelInputType.MOTION_VIDEO)
 
-    /** Get model by name, or null if not found */
-    fun fromName(name: String): VideoModel? = all.find { it.name == name }
+    // Deprecated models (old names, still work on the API)
+    @Deprecated("Use LUCY_2 instead", replaceWith = ReplaceWith("LUCY_2"))
+    val LUCY_2_V2V = VideoModel("lucy-2-v2v", "/v1/jobs/lucy-2-v2v", 20, 1280, 720, ModelInputType.VIDEO_EDIT)
 
-    /** All available video models */
+    @Deprecated("Use LUCY_CLIP instead", replaceWith = ReplaceWith("LUCY_CLIP"))
+    val LUCY_PRO_V2V = VideoModel("lucy-pro-v2v", "/v1/jobs/lucy-pro-v2v", 25, 1280, 704, ModelInputType.VIDEO_EDIT)
+
+    @Deprecated("Use LUCY_RESTYLE_2 instead", replaceWith = ReplaceWith("LUCY_RESTYLE_2"))
+    val LUCY_RESTYLE_V2V = VideoModel("lucy-restyle-v2v", "/v1/jobs/lucy-restyle-v2v", 22, 1280, 704, ModelInputType.VIDEO_RESTYLE)
+
+    /** Get model by name, or null if not found */
+    fun fromName(name: String): VideoModel? = allIncludingDeprecated.find { it.name == name }
+
+    /** All available video models (canonical only) */
     val all: List<VideoModel> = listOf(
-        LUCY_2_V2V,
-        LUCY_PRO_V2V,
-        LUCY_RESTYLE_V2V,
+        LUCY_CLIP,
+        LUCY_2,
+        LUCY_2_1,
+        LUCY_RESTYLE_2,
         LUCY_MOTION,
+    )
+
+    /** All models including deprecated names */
+    @Suppress("DEPRECATION")
+    val allIncludingDeprecated: List<VideoModel> = listOf(
+        LUCY_CLIP, LUCY_2, LUCY_2_1, LUCY_RESTYLE_2, LUCY_MOTION,
+        LUCY_2_V2V, LUCY_PRO_V2V, LUCY_RESTYLE_V2V,
     )
 }

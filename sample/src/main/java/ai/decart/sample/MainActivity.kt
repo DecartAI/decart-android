@@ -207,7 +207,7 @@ class MainActivity : ComponentActivity() {
 
         var prompt by remember { mutableStateOf("") }
         var enhancePrompt by remember { mutableStateOf(true) }
-        var selectedModel by remember { mutableStateOf(RealtimeModels.LUCY_V2V_720P_RT) }
+        var selectedModel by remember { mutableStateOf(RealtimeModels.LUCY) }
         var connectionState by remember { mutableStateOf(ConnectionState.DISCONNECTED) }
         var modelMenuExpanded by remember { mutableStateOf(false) }
         var statusMessage by remember { mutableStateOf("Ready") }
@@ -484,7 +484,7 @@ class MainActivity : ComponentActivity() {
         val context = LocalContext.current
         val coroutineScope = rememberCoroutineScope()
 
-        var selectedModel by remember { mutableStateOf(VideoModels.LUCY_2_V2V) }
+        var selectedModel by remember { mutableStateOf(VideoModels.LUCY_2) }
         var modelMenuExpanded by remember { mutableStateOf(false) }
         var prompt by remember { mutableStateOf("") }
         var seed by remember { mutableStateOf("") }
