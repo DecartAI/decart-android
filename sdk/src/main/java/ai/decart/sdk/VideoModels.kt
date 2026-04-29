@@ -16,8 +16,8 @@ enum class ModelInputType {
 /**
  * Definition for a batch video model that supports the queue (async job) API.
  *
- * @property name The model identifier used in API endpoints (e.g., "lucy-2-v2v")
- * @property jobsUrlPath The URL path for submitting jobs (e.g., "/v1/jobs/lucy-2-v2v")
+ * @property name The model identifier used in API endpoints (e.g., "lucy-2.1")
+ * @property jobsUrlPath The URL path for submitting jobs (e.g., "/v1/jobs/lucy-2.1")
  * @property fps Output video frame rate
  * @property width Output video width in pixels
  * @property height Output video height in pixels
@@ -37,7 +37,7 @@ data class VideoModel(
  *
  * Usage:
  * ```kotlin
- * val model = VideoModels.LUCY_2_V2V
+ * val model = VideoModels.LUCY_2_1
  * val result = client.queue.submitAndPoll(model, input)
  * ```
  */
@@ -45,9 +45,6 @@ object VideoModels {
     // Canonical models
     /** Video-to-video clip editing. Output: 1280x704, 25fps. */
     val LUCY_CLIP = VideoModel("lucy-clip", "/v1/jobs/lucy-clip", 25, 1280, 704, ModelInputType.VIDEO_EDIT)
-
-    /** Video-to-video editing with optional reference image. Output: 1280x720, 20fps. */
-    val LUCY_2 = VideoModel("lucy-2", "/v1/jobs/lucy-2", 20, 1280, 720, ModelInputType.VIDEO_EDIT)
 
     /** Lucy 2.1 video editing with optional reference image. Output: 1088x624, 20fps. */
     val LUCY_2_1 = VideoModel("lucy-2.1", "/v1/jobs/lucy-2.1", 20, 1088, 624, ModelInputType.VIDEO_EDIT)
@@ -69,9 +66,6 @@ object VideoModels {
     val LUCY_MOTION_LATEST = VideoModel("lucy-motion-latest", "/v1/jobs/lucy-motion-latest", 25, 1280, 704, ModelInputType.MOTION_VIDEO)
 
     // Deprecated models (old names, still work on the API)
-    @Deprecated("Use LUCY_2 instead", replaceWith = ReplaceWith("LUCY_2"))
-    val LUCY_2_V2V = VideoModel("lucy-2-v2v", "/v1/jobs/lucy-2-v2v", 20, 1280, 720, ModelInputType.VIDEO_EDIT)
-
     @Deprecated("Use LUCY_CLIP instead", replaceWith = ReplaceWith("LUCY_CLIP"))
     val LUCY_PRO_V2V = VideoModel("lucy-pro-v2v", "/v1/jobs/lucy-pro-v2v", 25, 1280, 704, ModelInputType.VIDEO_EDIT)
 
@@ -84,7 +78,6 @@ object VideoModels {
     /** All available video models (canonical + latest) */
     val all: List<VideoModel> = listOf(
         LUCY_CLIP,
-        LUCY_2,
         LUCY_2_1,
         LUCY_2_1_VTON,
         LUCY_RESTYLE_2,
@@ -99,8 +92,8 @@ object VideoModels {
     /** All models including deprecated names */
     @Suppress("DEPRECATION")
     val allIncludingDeprecated: List<VideoModel> = listOf(
-        LUCY_CLIP, LUCY_2, LUCY_2_1, LUCY_2_1_VTON, LUCY_RESTYLE_2, LUCY_MOTION,
+        LUCY_CLIP, LUCY_2_1, LUCY_2_1_VTON, LUCY_RESTYLE_2, LUCY_MOTION,
         LUCY_LATEST, LUCY_VTON_LATEST, LUCY_RESTYLE_LATEST, LUCY_CLIP_LATEST, LUCY_MOTION_LATEST,
-        LUCY_2_V2V, LUCY_PRO_V2V, LUCY_RESTYLE_V2V,
+        LUCY_PRO_V2V, LUCY_RESTYLE_V2V,
     )
 }

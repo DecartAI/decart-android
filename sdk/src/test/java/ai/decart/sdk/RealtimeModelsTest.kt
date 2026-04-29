@@ -7,13 +7,12 @@ class RealtimeModelsTest {
 
     @Test
     fun `all models have correct count`() {
-        assertEquals(10, RealtimeModels.all.size)
+        assertEquals(9, RealtimeModels.all.size)
     }
 
     @Test
     fun `fromName returns correct model for canonical names`() {
         assertEquals(RealtimeModels.LUCY, RealtimeModels.fromName("lucy"))
-        assertEquals(RealtimeModels.LUCY_2, RealtimeModels.fromName("lucy-2"))
         assertEquals(RealtimeModels.LUCY_2_1, RealtimeModels.fromName("lucy-2.1"))
         assertEquals(RealtimeModels.LUCY_2_1_VTON, RealtimeModels.fromName("lucy-2.1-vton"))
         assertEquals(RealtimeModels.LUCY_RESTYLE, RealtimeModels.fromName("lucy-restyle"))
@@ -33,7 +32,6 @@ class RealtimeModelsTest {
         assertNotNull(RealtimeModels.fromName("mirage"))
         assertNotNull(RealtimeModels.fromName("mirage_v2"))
         assertNotNull(RealtimeModels.fromName("lucy_v2v_720p_rt"))
-        assertNotNull(RealtimeModels.fromName("lucy_2_rt"))
         assertNotNull(RealtimeModels.fromName("live_avatar"))
     }
 

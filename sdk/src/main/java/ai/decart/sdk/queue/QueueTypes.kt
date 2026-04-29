@@ -121,7 +121,7 @@ interface QueueJobInput {
 }
 
 /**
- * Input for `lucy-2-v2v` (video-to-video editing).
+ * Input for Lucy 2.1 video editing models.
  *
  * [prompt] is required but may be an empty string (server accepts `""`).
  * [referenceImage] is optional and provides style guidance.
