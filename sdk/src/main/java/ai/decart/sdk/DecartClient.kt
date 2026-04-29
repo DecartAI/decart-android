@@ -35,7 +35,7 @@ data class DecartClientConfig(
  *
  * // Batch video generation
  * val result = client.queue.submitAndPoll(
- *     model = VideoModels.LUCY_2_V2V,
+ *     model = VideoModels.LUCY_2_1,
  *     input = VideoEditInput(
  *         prompt = "Transform to watercolor style",
  *         data = FileInput.fromUri(videoUri),
@@ -73,7 +73,7 @@ class DecartClient(
      * The queue client for batch video generation jobs.
      *
      * Submit video generation jobs and poll for results asynchronously.
-     * Supports all batch video models (e.g., [VideoModels.LUCY_2_V2V]).
+     * Supports all batch video models (e.g., [VideoModels.LUCY_2_1]).
      */
     val queue: QueueClient = QueueClient(
         apiKey = apiKey,

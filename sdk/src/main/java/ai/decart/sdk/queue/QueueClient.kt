@@ -37,7 +37,7 @@ import java.util.concurrent.TimeUnit
  *
  * // Option 1: Submit and auto-poll
  * val result = client.queue.submitAndPoll(
- *     model = VideoModels.LUCY_2_V2V,
+ *     model = VideoModels.LUCY_2_1,
  *     input = VideoEditInput(
  *         prompt = "Transform to anime style",
  *         data = FileInput.fromUri(videoUri),
@@ -50,7 +50,7 @@ import java.util.concurrent.TimeUnit
  * }
  *
  * // Option 2: Observe as Flow (emits progress + terminal result)
- * client.queue.submitAndObserve(VideoModels.LUCY_2_V2V, input)
+ * client.queue.submitAndObserve(VideoModels.LUCY_2_1, input)
  *     .collect { update ->
  *         when (update) {
  *             is QueueJobResult.InProgress -> showProgress(update.status)
@@ -60,7 +60,7 @@ import java.util.concurrent.TimeUnit
  *     }
  *
  * // Option 3: Manual control
- * val job = client.queue.submit(VideoModels.LUCY_2_V2V, input)
+ * val job = client.queue.submit(VideoModels.LUCY_2_1, input)
  * // ... poll manually ...
  * val status = client.queue.status(job.jobId)
  * val bytes = client.queue.result(job.jobId)
@@ -87,7 +87,7 @@ class QueueClient internal constructor(
     /**
      * Submit a video generation job. Returns immediately with the job ID.
      *
-     * @param model The video model to use (e.g., [ai.decart.sdk.VideoModels.LUCY_2_V2V])
+     * @param model The video model to use (e.g., [ai.decart.sdk.VideoModels.LUCY_2_1])
      * @param input The job input (e.g., [VideoEditInput])
      * @param onUploadProgress Optional listener invoked as the request body is written to the network.
      *   Useful for showing upload progress on large video files.

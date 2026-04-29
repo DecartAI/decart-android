@@ -100,7 +100,7 @@ val input = VideoEditInput(
     enhancePrompt = true,
 )
 
-when (val result = client.queue.submitAndPoll(VideoModels.LUCY_2_V2V, input)) {
+when (val result = client.queue.submitAndPoll(VideoModels.LUCY_2_1, input)) {
     is QueueJobResult.Completed -> {
         // MP4 bytes
         val output = java.io.File(context.cacheDir, "output.mp4")
@@ -119,7 +119,7 @@ client.release()
 ### Batch Progress Stream Example
 
 ```kotlin
-client.queue.submitAndObserve(VideoModels.LUCY_2_V2V, input).collect { update ->
+client.queue.submitAndObserve(VideoModels.LUCY_2_1, input).collect { update ->
     when (update) {
         is QueueJobResult.InProgress -> {
             // pending / processing
@@ -179,14 +179,14 @@ client.queue.submit(VideoModels.LUCY_MOTION, motion)
 
 | Model | Constant | Queue Path | Resolution | FPS |
 |-------|----------|------------|------------|-----|
-| Lucy 2 V2V | `VideoModels.LUCY_2_V2V` | `/v1/jobs/lucy-2-v2v` | 1280x720 | 20 |
+| Lucy 2.1 | `VideoModels.LUCY_2_1` | `/v1/jobs/lucy-2.1` | 1088x624 | 20 |
 | Lucy Pro V2V | `VideoModels.LUCY_PRO_V2V` | `/v1/jobs/lucy-pro-v2v` | 1280x704 | 25 |
 | Lucy Restyle V2V | `VideoModels.LUCY_RESTYLE_V2V` | `/v1/jobs/lucy-restyle-v2v` | 1280x704 | 25 |
 | Lucy Motion | `VideoModels.LUCY_MOTION` | `/v1/jobs/lucy-motion` | 1280x704 | 25 |
 
 Typed input helpers:
 
-- `VideoEditInput` (`lucy-2-v2v`, `lucy-pro-v2v`)
+- `VideoEditInput` (`lucy-2.1`, `lucy-pro-v2v`)
 - `VideoRestyleInput` (`lucy-restyle-v2v`)
 - `MotionVideoInput` (`lucy-motion`)
 

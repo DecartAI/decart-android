@@ -484,7 +484,7 @@ class MainActivity : ComponentActivity() {
         val context = LocalContext.current
         val coroutineScope = rememberCoroutineScope()
 
-        var selectedModel by remember { mutableStateOf(VideoModels.LUCY_2) }
+        var selectedModel by remember { mutableStateOf(VideoModels.LUCY_2_1) }
         var modelMenuExpanded by remember { mutableStateOf(false) }
         var prompt by remember { mutableStateOf("") }
         var seed by remember { mutableStateOf("") }

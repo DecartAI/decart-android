@@ -22,7 +22,7 @@ class QueueClientTest {
     private lateinit var server: MockWebServer
     private lateinit var client: QueueClient
 
-    private val model = VideoModels.LUCY_2_V2V
+    private val model = VideoModels.LUCY_2_1
 
     private fun input(vararg bytes: Byte = byteArrayOf(1)) = VideoEditInput(
         prompt = "",

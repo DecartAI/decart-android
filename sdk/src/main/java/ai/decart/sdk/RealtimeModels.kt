@@ -11,7 +11,6 @@ data class RealtimeModel(
 object RealtimeModels {
     // Canonical models
     val LUCY = RealtimeModel("lucy", "/v1/stream", 25, 1280, 704)
-    val LUCY_2 = RealtimeModel("lucy-2", "/v1/stream", 20, 1280, 720)
     val LUCY_2_1 = RealtimeModel("lucy-2.1", "/v1/stream", 20, 1088, 624)
     val LUCY_2_1_VTON = RealtimeModel("lucy-2.1-vton", "/v1/stream", 20, 1088, 624)
     val LUCY_RESTYLE = RealtimeModel("lucy-restyle", "/v1/stream", 25, 1280, 704)
@@ -30,8 +29,6 @@ object RealtimeModels {
     val MIRAGE_V2 = RealtimeModel("mirage_v2", "/v1/stream", 22, 1280, 704)
     @Deprecated("Use LUCY instead", replaceWith = ReplaceWith("LUCY"))
     val LUCY_V2V_720P_RT = RealtimeModel("lucy_v2v_720p_rt", "/v1/stream", 25, 1280, 704)
-    @Deprecated("Use LUCY_2 instead", replaceWith = ReplaceWith("LUCY_2"))
-    val LUCY_2_RT = RealtimeModel("lucy_2_rt", "/v1/stream", 20, 1280, 720)
     @Deprecated("Use LIVE_AVATAR instead", replaceWith = ReplaceWith("LIVE_AVATAR"))
     val LIVE_AVATAR_LEGACY = RealtimeModel("live_avatar", "/v1/stream", 25, 1280, 720)
 
@@ -39,7 +36,6 @@ object RealtimeModels {
     fun fromName(name: String): RealtimeModel? = when (name) {
         // Canonical names
         "lucy" -> LUCY
-        "lucy-2" -> LUCY_2
         "lucy-2.1" -> LUCY_2_1
         "lucy-2.1-vton" -> LUCY_2_1_VTON
         "lucy-restyle" -> LUCY_RESTYLE
@@ -53,14 +49,13 @@ object RealtimeModels {
         @Suppress("DEPRECATION") "mirage" -> MIRAGE
         @Suppress("DEPRECATION") "mirage_v2" -> MIRAGE_V2
         @Suppress("DEPRECATION") "lucy_v2v_720p_rt" -> LUCY_V2V_720P_RT
-        @Suppress("DEPRECATION") "lucy_2_rt" -> LUCY_2_RT
         @Suppress("DEPRECATION") "live_avatar" -> LIVE_AVATAR_LEGACY
         else -> null
     }
 
     /** All available realtime models (canonical only) */
     val all: List<RealtimeModel> = listOf(
-        LUCY, LUCY_2, LUCY_2_1, LUCY_2_1_VTON, LUCY_RESTYLE, LUCY_RESTYLE_2, LIVE_AVATAR,
+        LUCY, LUCY_2_1, LUCY_2_1_VTON, LUCY_RESTYLE, LUCY_RESTYLE_2, LIVE_AVATAR,
         LUCY_LATEST, LUCY_VTON_LATEST, LUCY_RESTYLE_LATEST,
     )
 }
