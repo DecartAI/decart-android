@@ -172,7 +172,6 @@ client.queue.submit(VideoModels.LUCY_MOTION, motion)
 | Mirage | `RealtimeModels.MIRAGE` | 1280x704 | 25 |
 | Mirage V2 | `RealtimeModels.MIRAGE_V2` | 1280x704 | 22 |
 | Lucy V2V | `RealtimeModels.LUCY_V2V_720P_RT` | 1280x704 | 25 |
-| Lucy 2 RT | `RealtimeModels.LUCY_2_RT` | 1280x720 | 20 |
 | Live Avatar | `RealtimeModels.LIVE_AVATAR` | 1280x720 | 25 |
 
 ### Batch Video Models
