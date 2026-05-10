@@ -198,54 +198,6 @@ data class VideoRestyleInput(
     }
 }
 
-/**
- * A point in a motion trajectory for [MotionVideoInput].
- *
- * Coordinates are normalized to 0–1 range relative to the image dimensions.
- *
- * @property frame Frame number (≥ 0)
- * @property x Normalized x coordinate (0.0–1.0)
- * @property y Normalized y coordinate (0.0–1.0)
- */
-data class TrajectoryPoint(
-    val frame: Int,
-    val x: Float,
-    val y: Float,
-)
-
-/**
- * Input for motion video models (`lucy-motion`).
- *
- * Animates a detected object in the image along the specified trajectory.
- * The object at the first trajectory point is auto-detected — no text prompt is needed.
- *
- * @property data Image file containing the object to animate (required)
- * @property trajectory Path for the object to follow (2–1000 points)
- * @property seed Optional seed for reproducible output (0–4294967295)
- * @property resolution Output resolution (default "720p")
- */
-data class MotionVideoInput(
-    val data: FileInput,
-    val trajectory: List<TrajectoryPoint>,
-    val seed: Int? = null,
-    val resolution: String? = null,
-) : QueueJobInput {
-
-    init {
-        require(trajectory.size >= 2) { "Trajectory must have at least 2 points" }
-        require(trajectory.size <= 1000) { "Trajectory must have at most 1000 points" }
-    }
-
-    override fun toFormFields(): Map<String, Any?> = buildMap {
-        put("data", data)
-        val json = trajectory.joinToString(",", "[", "]") { pt ->
-            """{"frame":${pt.frame},"x":${pt.x},"y":${pt.y}}"""
-        }
-        put("trajectory", json)
-        seed?.let { put("seed", it.toString()) }
-        resolution?.let { put("resolution", it) }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Exceptions

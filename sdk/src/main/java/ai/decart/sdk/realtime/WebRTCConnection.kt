@@ -25,7 +25,6 @@ data class ConnectionCallbacks(
     val onError: ((Exception) -> Unit)? = null,
     val vp8MinBitrate: Int? = null,
     val vp8StartBitrate: Int? = null,
-    val modelName: String? = null,
     val initialImage: String? = null,
     val initialPrompt: InitialPrompt? = null,
     val logger: Logger? = null,
@@ -698,15 +697,6 @@ class WebRTCConnection(private val callbacks: ConnectionCallbacks = ConnectionCa
         val pc = this.pc ?: return
 
         if (localVideoTrack != null || localAudioTrack != null) {
-            // For live_avatar: add receive-only video transceiver
-            // (sends audio only via addTrack, receives video + audio from server)
-            if (callbacks.modelName == "live-avatar" || callbacks.modelName == "live_avatar") {
-                pc.addTransceiver(
-                    MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO,
-                    RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.RECV_ONLY)
-                )
-            }
-
             // Add local tracks to the peer connection
             val streamIds = listOf("local_stream")
             localVideoTrack?.let { pc.addTrack(it, streamIds) }

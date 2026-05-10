@@ -9,8 +9,6 @@ enum class ModelInputType {
     VIDEO_EDIT,
     /** Video + (prompt XOR reference image) ([ai.decart.sdk.queue.VideoRestyleInput]) */
     VIDEO_RESTYLE,
-    /** Image + trajectory ([ai.decart.sdk.queue.MotionVideoInput]) */
-    MOTION_VIDEO,
 }
 
 /**
@@ -55,15 +53,11 @@ object VideoModels {
     /** Video restyling with prompt or reference image. Output: 1280x704, 22fps. */
     val LUCY_RESTYLE_2 = VideoModel("lucy-restyle-2", "/v1/jobs/lucy-restyle-2", 22, 1280, 704, ModelInputType.VIDEO_RESTYLE)
 
-    /** Image-to-motion-video with trajectory. Output: 1280x704, 25fps. */
-    val LUCY_MOTION = VideoModel("lucy-motion", "/v1/jobs/lucy-motion", 25, 1280, 704, ModelInputType.MOTION_VIDEO)
-
     // Latest aliases (server-side resolution)
     val LUCY_LATEST = VideoModel("lucy-latest", "/v1/jobs/lucy-latest", 20, 1088, 624, ModelInputType.VIDEO_EDIT)
     val LUCY_VTON_LATEST = VideoModel("lucy-vton-latest", "/v1/jobs/lucy-vton-latest", 20, 1088, 624, ModelInputType.VIDEO_EDIT)
     val LUCY_RESTYLE_LATEST = VideoModel("lucy-restyle-latest", "/v1/jobs/lucy-restyle-latest", 22, 1280, 704, ModelInputType.VIDEO_RESTYLE)
     val LUCY_CLIP_LATEST = VideoModel("lucy-clip-latest", "/v1/jobs/lucy-clip-latest", 25, 1280, 704, ModelInputType.VIDEO_EDIT)
-    val LUCY_MOTION_LATEST = VideoModel("lucy-motion-latest", "/v1/jobs/lucy-motion-latest", 25, 1280, 704, ModelInputType.MOTION_VIDEO)
 
     // Deprecated models (old names, still work on the API)
     @Deprecated("Use LUCY_CLIP instead", replaceWith = ReplaceWith("LUCY_CLIP"))
@@ -81,19 +75,17 @@ object VideoModels {
         LUCY_2_1,
         LUCY_2_1_VTON,
         LUCY_RESTYLE_2,
-        LUCY_MOTION,
         LUCY_LATEST,
         LUCY_VTON_LATEST,
         LUCY_RESTYLE_LATEST,
         LUCY_CLIP_LATEST,
-        LUCY_MOTION_LATEST,
     )
 
     /** All models including deprecated names */
     @Suppress("DEPRECATION")
     val allIncludingDeprecated: List<VideoModel> = listOf(
-        LUCY_CLIP, LUCY_2_1, LUCY_2_1_VTON, LUCY_RESTYLE_2, LUCY_MOTION,
-        LUCY_LATEST, LUCY_VTON_LATEST, LUCY_RESTYLE_LATEST, LUCY_CLIP_LATEST, LUCY_MOTION_LATEST,
+        LUCY_CLIP, LUCY_2_1, LUCY_2_1_VTON, LUCY_RESTYLE_2,
+        LUCY_LATEST, LUCY_VTON_LATEST, LUCY_RESTYLE_LATEST, LUCY_CLIP_LATEST,
         LUCY_PRO_V2V, LUCY_RESTYLE_V2V,
     )
 }
