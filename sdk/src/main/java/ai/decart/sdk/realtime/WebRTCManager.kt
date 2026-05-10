@@ -27,7 +27,6 @@ data class WebRTCConfig(
     val onError: ((Exception) -> Unit)? = null,
     val vp8MinBitrate: Int? = null,
     val vp8StartBitrate: Int? = null,
-    val modelName: String? = null,
     val initialImage: String? = null,
     val initialPrompt: InitialPrompt? = null
 )
@@ -66,7 +65,6 @@ class WebRTCManager(private val config: WebRTCConfig) {
             onError = config.onError,
             vp8MinBitrate = config.vp8MinBitrate,
             vp8StartBitrate = config.vp8StartBitrate,
-            modelName = config.modelName,
             initialImage = config.initialImage,
             initialPrompt = config.initialPrompt,
             logger = logger,

@@ -207,7 +207,7 @@ class MainActivity : ComponentActivity() {
 
         var prompt by remember { mutableStateOf("") }
         var enhancePrompt by remember { mutableStateOf(true) }
-        var selectedModel by remember { mutableStateOf(RealtimeModels.LUCY) }
+        var selectedModel by remember { mutableStateOf(RealtimeModels.LUCY_2_1) }
         var connectionState by remember { mutableStateOf(ConnectionState.DISCONNECTED) }
         var modelMenuExpanded by remember { mutableStateOf(false) }
         var statusMessage by remember { mutableStateOf("Ready") }
@@ -493,8 +493,6 @@ class MainActivity : ComponentActivity() {
         var referenceImageUri by remember { mutableStateOf<Uri?>(null) }
         // Restyle: prompt vs reference image toggle
         var restyleUsePrompt by remember { mutableStateOf(true) }
-        // Motion: trajectory JSON
-        var trajectoryJson by remember { mutableStateOf("") }
         var isSubmitting by remember { mutableStateOf(false) }
         var statusText by remember { mutableStateOf("") }
         var errorText by remember { mutableStateOf("") }
@@ -511,10 +509,6 @@ class MainActivity : ComponentActivity() {
         }
 
         val videoPicker = rememberLauncherForActivityResult(
-            ActivityResultContracts.GetContent()
-        ) { uri -> dataUri = uri }
-
-        val imagePicker = rememberLauncherForActivityResult(
             ActivityResultContracts.GetContent()
         ) { uri -> dataUri = uri }
 
@@ -559,44 +553,21 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // ---------- Data file picker (video or image depending on model) ----------
-            val needsVideoFile = inputType == ModelInputType.VIDEO_EDIT || inputType == ModelInputType.VIDEO_RESTYLE
-            val needsImageFile = inputType == ModelInputType.MOTION_VIDEO
-
-            if (needsVideoFile) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedButton(onClick = { videoPicker.launch("video/*") }) {
-                        Text("Select Video")
-                    }
-                    Text(
-                        text = dataUri?.lastPathSegment ?: "(none)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f)
-                    )
+            // ---------- Data file picker ----------
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(onClick = { videoPicker.launch("video/*") }) {
+                    Text("Select Video")
                 }
-            }
-
-            if (needsImageFile) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedButton(onClick = { imagePicker.launch("image/*") }) {
-                        Text("Select Image")
-                    }
-                    Text(
-                        text = dataUri?.lastPathSegment ?: "(none)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+                Text(
+                    text = dataUri?.lastPathSegment ?: "(none)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
             }
 
             // ---------- Restyle mode toggle (prompt vs reference image) ----------
@@ -622,7 +593,6 @@ class MainActivity : ComponentActivity() {
             val showPrompt = when (inputType) {
                 ModelInputType.VIDEO_EDIT -> true
                 ModelInputType.VIDEO_RESTYLE -> restyleUsePrompt
-                ModelInputType.MOTION_VIDEO -> false
             }
             if (showPrompt) {
                 OutlinedTextField(
@@ -670,19 +640,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // ---------- Trajectory JSON (MOTION_VIDEO only) ----------
-            if (inputType == ModelInputType.MOTION_VIDEO) {
-                OutlinedTextField(
-                    value = trajectoryJson,
-                    onValueChange = { trajectoryJson = it },
-                    label = { Text("Trajectory JSON") },
-                    placeholder = { Text("""[{"frame":0,"x":0.5,"y":0.5},{"frame":14,"x":0.8,"y":0.3}]""") },
-                    modifier = Modifier.fillMaxWidth(),
-                    maxLines = 5,
-                    supportingText = { Text("Array of {frame, x, y} — coordinates 0–1") }
-                )
-            }
-
             // ---------- Seed ----------
             OutlinedTextField(
                 value = seed,
@@ -697,7 +654,6 @@ class MainActivity : ComponentActivity() {
             val showEnhance = when (inputType) {
                 ModelInputType.VIDEO_EDIT -> true
                 ModelInputType.VIDEO_RESTYLE -> restyleUsePrompt
-                ModelInputType.MOTION_VIDEO -> false
             }
             if (showEnhance) {
                 Row(
@@ -714,7 +670,6 @@ class MainActivity : ComponentActivity() {
             val canSubmit = !isSubmitting && apiKey.isNotBlank() && when (inputType) {
                 ModelInputType.VIDEO_EDIT -> dataUri != null
                 ModelInputType.VIDEO_RESTYLE -> dataUri != null && (if (restyleUsePrompt) prompt.isNotBlank() else referenceImageUri != null)
-                ModelInputType.MOTION_VIDEO -> dataUri != null && trajectoryJson.isNotBlank()
             }
 
             Button(
@@ -756,23 +711,6 @@ class MainActivity : ComponentActivity() {
                                         VideoRestyleInput(
                                             data = FileInput.fromUri(dataUri!!),
                                             referenceImage = FileInput.fromUri(referenceImageUri!!),
-                                            seed = seed.toIntOrNull(),
-                                        )
-                                    }
-                                    ModelInputType.MOTION_VIDEO -> {
-                                        val points = mutableListOf<TrajectoryPoint>()
-                                        val arr = org.json.JSONArray(trajectoryJson)
-                                        for (i in 0 until arr.length()) {
-                                            val obj = arr.getJSONObject(i)
-                                            points.add(TrajectoryPoint(
-                                                frame = obj.getInt("frame"),
-                                                x = obj.getDouble("x").toFloat(),
-                                                y = obj.getDouble("y").toFloat(),
-                                            ))
-                                        }
-                                        MotionVideoInput(
-                                            data = FileInput.fromUri(dataUri!!),
-                                            trajectory = points,
                                             seed = seed.toIntOrNull(),
                                         )
                                     }

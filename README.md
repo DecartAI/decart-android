@@ -62,7 +62,7 @@ realtime.connect(
     localVideoTrack = cameraTrack,
     localAudioTrack = null,
     options = ConnectOptions(
-        model = RealtimeModels.MIRAGE_V2,
+        model = RealtimeModels.LUCY_RESTYLE_2,
         onRemoteVideoTrack = { track ->
             // Display the transformed video
             remoteRenderer.addSink(track)
@@ -140,27 +140,15 @@ client.queue.submitAndObserve(VideoModels.LUCY_2_1, input).collect { update ->
 ```kotlin
 import ai.decart.sdk.VideoModels
 import ai.decart.sdk.queue.FileInput
-import ai.decart.sdk.queue.MotionVideoInput
-import ai.decart.sdk.queue.TrajectoryPoint
 import ai.decart.sdk.queue.VideoRestyleInput
 
-// Restyle V2V (reference-image mode)
+// Restyle (reference-image mode)
 val restyle = VideoRestyleInput(
     data = FileInput.fromUri(videoUri),
     referenceImage = FileInput.fromUri(styleImageUri),
     seed = 7,
 )
-client.queue.submit(VideoModels.LUCY_RESTYLE_V2V, restyle)
-
-// Motion video (trajectory-guided)
-val motion = MotionVideoInput(
-    data = FileInput.fromUri(imageUri),
-    trajectory = listOf(
-        TrajectoryPoint(frame = 0, x = 0.5f, y = 0.5f),
-        TrajectoryPoint(frame = 12, x = 0.8f, y = 0.35f),
-    ),
-)
-client.queue.submit(VideoModels.LUCY_MOTION, motion)
+client.queue.submit(VideoModels.LUCY_RESTYLE_2, restyle)
 ```
 
 ## Available Models
@@ -169,25 +157,23 @@ client.queue.submit(VideoModels.LUCY_MOTION, motion)
 
 | Model | Constant | Resolution | FPS |
 |-------|----------|-----------|-----|
-| Mirage | `RealtimeModels.MIRAGE` | 1280x704 | 25 |
-| Mirage V2 | `RealtimeModels.MIRAGE_V2` | 1280x704 | 22 |
-| Lucy V2V | `RealtimeModels.LUCY_V2V_720P_RT` | 1280x704 | 25 |
-| Live Avatar | `RealtimeModels.LIVE_AVATAR` | 1280x720 | 25 |
+| Lucy 2.1 | `RealtimeModels.LUCY_2_1` | 1088x624 | 20 |
+| Lucy 2.1 VTON | `RealtimeModels.LUCY_2_1_VTON` | 1088x624 | 20 |
+| Lucy Restyle 2 | `RealtimeModels.LUCY_RESTYLE_2` | 1280x704 | 22 |
 
 ### Batch Video Models
 
 | Model | Constant | Queue Path | Resolution | FPS |
 |-------|----------|------------|------------|-----|
+| Lucy Clip | `VideoModels.LUCY_CLIP` | `/v1/jobs/lucy-clip` | 1280x704 | 25 |
 | Lucy 2.1 | `VideoModels.LUCY_2_1` | `/v1/jobs/lucy-2.1` | 1088x624 | 20 |
-| Lucy Pro V2V | `VideoModels.LUCY_PRO_V2V` | `/v1/jobs/lucy-pro-v2v` | 1280x704 | 25 |
-| Lucy Restyle V2V | `VideoModels.LUCY_RESTYLE_V2V` | `/v1/jobs/lucy-restyle-v2v` | 1280x704 | 25 |
-| Lucy Motion | `VideoModels.LUCY_MOTION` | `/v1/jobs/lucy-motion` | 1280x704 | 25 |
+| Lucy 2.1 VTON | `VideoModels.LUCY_2_1_VTON` | `/v1/jobs/lucy-2.1-vton` | 1088x624 | 20 |
+| Lucy Restyle 2 | `VideoModels.LUCY_RESTYLE_2` | `/v1/jobs/lucy-restyle-2` | 1280x704 | 22 |
 
 Typed input helpers:
 
-- `VideoEditInput` (`lucy-2.1`, `lucy-pro-v2v`)
-- `VideoRestyleInput` (`lucy-restyle-v2v`)
-- `MotionVideoInput` (`lucy-motion`)
+- `VideoEditInput` (`lucy-2.1`, `lucy-2.1-vton`, `lucy-clip`)
+- `VideoRestyleInput` (`lucy-restyle-2`)
 
 ## API Reference
 
@@ -205,9 +191,8 @@ Typed input helpers:
 | `VideoModels` | Available batch video model definitions |
 | `ModelInputType` | Input category expected by each batch model |
 | `QueueClient` | Batch queue client (`submit`, `status`, `result`, `submitAndPoll`, `submitAndObserve`) |
-| `VideoEditInput` | Typed queue input for Lucy 2 V2V payload |
-| `VideoRestyleInput` | Typed queue input for Lucy Restyle V2V |
-| `MotionVideoInput` | Typed queue input for Lucy Motion |
+| `VideoEditInput` | Typed queue input for Lucy 2.1 V2V payload |
+| `VideoRestyleInput` | Typed queue input for Lucy Restyle |
 | `FileInput` | File wrappers for `Uri`, `File`, `ByteArray`, `InputStream` |
 | `DecartError` | Error with code, message, and optional cause |
 | `ErrorCodes` | Predefined error code constants |
@@ -223,7 +208,6 @@ Typed input helpers:
 | `disconnect()` | End the current session |
 | `setPrompt(prompt, enhance)` | Update the prompt |
 | `setImage(imageBase64, prompt, enhance, timeout)` | Set a reference image |
-| `playAudio(audioData)` | Play audio (Live Avatar only) |
 | `release()` | Release all resources |
 
 **Observable State:**

@@ -33,7 +33,7 @@ data class ConnectOptions(
  * ```kotlin
  * val client = RealTimeClient(context, RealTimeClientConfig(apiKey = "..."))
  * client.connect(ConnectOptions(
- *     model = RealtimeModels.LUCY_V2V_720P_RT,
+ *     model = RealtimeModels.LUCY_RESTYLE_2,
  *     onRemoteVideoTrack = { track -> renderer.addSink(track) }
  * ))
  *
@@ -59,7 +59,6 @@ class RealTimeClient(
     private var eglBase: EglBase? = null
 
     private var webrtcManager: WebRTCManager? = null
-    private var audioStreamManager: AudioStreamManager? = null
     private var statsCollector: WebRTCStatsCollector? = null
 
     // Public state flows
@@ -111,7 +110,7 @@ class RealTimeClient(
     /**
      * Connect to a realtime model and start streaming.
      *
-     * @param localVideoTrack Local camera video track to send (null for live_avatar or subscribe mode)
+     * @param localVideoTrack Local camera video track to send (null for subscribe mode)
      * @param localAudioTrack Local microphone audio track to send (null to omit)
      * @param options Connection options including model and callbacks
      */
@@ -125,15 +124,6 @@ class RealTimeClient(
             initialize()
         }
         val factory = peerConnectionFactory!!
-
-        val isAvatarLive = options.model.name == "live-avatar" || options.model.name == "live_avatar"
-
-        // For live_avatar without user-provided audio: create AudioStreamManager
-        var inputAudioTrack = localAudioTrack
-        if (isAvatarLive && localAudioTrack == null) {
-            audioStreamManager = AudioStreamManager(context, factory)
-            inputAudioTrack = audioStreamManager!!.getAudioTrack()
-        }
 
         // Build WebSocket URL
         val url = "${config.baseUrl}${options.model.urlPath}?api_key=${
@@ -155,7 +145,6 @@ class RealTimeClient(
             },
             vp8MinBitrate = 300,
             vp8StartBitrate = 600,
-            modelName = options.model.name,
             initialImage = options.initialImage,
             initialPrompt = options.initialPrompt
         ))
@@ -175,7 +164,7 @@ class RealTimeClient(
         }
 
         // Connect
-        manager.connect(localVideoTrack, inputAudioTrack, factory)
+        manager.connect(localVideoTrack, localAudioTrack, factory)
 
         // Start stats collection
         statsCollector = WebRTCStatsCollector()
@@ -194,8 +183,6 @@ class RealTimeClient(
         statsCollector = null
         webrtcManager?.cleanup()
         webrtcManager = null
-        audioStreamManager?.cleanup()
-        audioStreamManager = null
         sessionId = null
         _connectionState.value = ConnectionState.DISCONNECTED
     }
@@ -245,23 +232,6 @@ class RealTimeClient(
             timeout = timeout
         ))
     }
-
-    /**
-     * Play audio through the live_avatar audio stream.
-     * Only available when connected to the live_avatar model without a user-provided audio track.
-     *
-     * @param audioData Raw audio data (WAV, MP3, etc.)
-     */
-    suspend fun playAudio(audioData: ByteArray) {
-        val manager = audioStreamManager
-            ?: throw IllegalStateException("playAudio is only available for live_avatar model")
-        manager.playAudio(audioData)
-    }
-
-    /**
-     * Check if playAudio is available (live_avatar mode with internal audio).
-     */
-    fun isPlayAudioAvailable(): Boolean = audioStreamManager != null
 
     /**
      * Check if currently connected.

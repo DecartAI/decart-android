@@ -335,61 +335,6 @@ class QueueClientTest {
         assertTrue(fields["data"] is FileInput)
     }
 
-    // -- MotionVideoInput validation + fields -----------------------------
-
-    @Test
-    fun `MotionVideoInput rejects less than 2 trajectory points`() {
-        try {
-            MotionVideoInput(
-                data = FileInput.fromBytes(byteArrayOf(1), "image/png"),
-                trajectory = listOf(TrajectoryPoint(0, 0.5f, 0.5f)),
-            )
-            fail()
-        } catch (e: IllegalArgumentException) {
-            assertTrue(e.message!!.contains("at least 2"))
-        }
-    }
-
-    @Test
-    fun `MotionVideoInput trajectory serializes as JSON in form fields`() {
-        val input = MotionVideoInput(
-            data = FileInput.fromBytes(byteArrayOf(1), "image/png"),
-            trajectory = listOf(
-                TrajectoryPoint(0, 0.5f, 0.5f),
-                TrajectoryPoint(14, 0.8f, 0.3f),
-            ),
-            seed = 42,
-        )
-        val fields = input.toFormFields()
-        val json = fields["trajectory"] as String
-        assertTrue(json.startsWith("["))
-        assertTrue(json.contains("\"frame\":0"))
-        assertTrue(json.contains("\"x\":0.5"))
-        assertTrue(json.contains("\"frame\":14"))
-        assertEquals("42", fields["seed"])
-        assertNull(fields["prompt"])
-    }
-
-    // -- submit with MotionVideoInput -------------------------------------
-
-    @Test
-    fun `submit with MotionVideoInput sends trajectory JSON`() = runTest {
-        server.enqueue(MockResponse().setBody("""{"job_id":"j-1","status":"pending"}"""))
-
-        val input = MotionVideoInput(
-            data = FileInput.fromBytes(byteArrayOf(10), "image/png"),
-            trajectory = listOf(
-                TrajectoryPoint(0, 0.1f, 0.2f),
-                TrajectoryPoint(7, 0.9f, 0.8f),
-            ),
-        )
-        client.submit(VideoModels.LUCY_MOTION, input)
-
-        val body = server.takeRequest().body.readUtf8()
-        assertTrue("trajectory missing", body.contains("frame"))
-        assertTrue("trajectory missing x", body.contains("0.1"))
-    }
-
     // -- upload progress --------------------------------------------------
 
     @Test
