@@ -79,6 +79,51 @@ realtime.disconnect()
 client.release()
 ```
 
+### Front-camera mirroring
+
+The SDK can pre-flip the input video horizontally before sending it to the server.
+For selfie use cases this means you can render the remote stream as-is, without
+applying `SurfaceViewRenderer.setMirror(true)` on the remote view — which would
+also flip any server-baked overlay pixels (e.g. watermarks).
+
+Recommended: use the camera helper, which wraps `Camera2Enumerator`, the capturer,
+the source, and the track in one call:
+
+```kotlin
+import ai.decart.sdk.realtime.FacingMode
+import ai.decart.sdk.realtime.MirrorMode
+
+realtime.initialize(eglBase)
+
+val cameraTrack = realtime.createCameraVideoTrack(
+    facing = FacingMode.FRONT,
+    mirror = MirrorMode.AUTO, // OFF | ON | AUTO (AUTO mirrors iff facing == FRONT)
+)
+
+realtime.connect(
+    localVideoTrack = cameraTrack.track,
+    options = ConnectOptions(model = RealtimeModels.LUCY_2_1, onRemoteVideoTrack = { /* ... */ }),
+)
+
+// On teardown:
+cameraTrack.stop()
+```
+
+If you already manage your own camera pipeline, attach the public
+`MirrorVideoProcessor` to your `VideoSource` directly:
+
+```kotlin
+import ai.decart.sdk.realtime.MirrorVideoProcessor
+
+val source = realtime.createVideoSource()!!
+source.setVideoProcessor(MirrorVideoProcessor())
+// ...wire your VideoCapturer to source.capturerObserver as usual.
+```
+
+When you pre-flip the input, render the remote stream **without**
+`setMirror(true)` on the remote `SurfaceViewRenderer` so server-baked overlays
+appear correctly oriented.
+
 ### Batch Queue Example (Lucy 2 V2V)
 
 ```kotlin
@@ -204,6 +249,7 @@ Typed input helpers:
 | Method | Description |
 |--------|-------------|
 | `initialize(eglBase?)` | Initialize WebRTC (optional, auto-called on connect) |
+| `createCameraVideoTrack(facing, mirror, width, height, fps, trackId)` | One-line camera setup, optional pre-flip via `MirrorVideoProcessor` |
 | `connect(videoTrack, audioTrack, options)` | Connect to a model |
 | `disconnect()` | End the current session |
 | `setPrompt(prompt, enhance)` | Update the prompt |

@@ -37,14 +37,11 @@ import java.io.File
 class MainActivity : ComponentActivity() {
 
     private var eglBase: EglBase? = null
-    private var peerConnectionFactory: PeerConnectionFactory? = null
-    private var videoCapturer: CameraVideoCapturer? = null
-    private var videoSource: VideoSource? = null
+    private var cameraVideoTrack: CameraVideoTrack? = null
     private var localVideoTrack: VideoTrack? = null
     private var localRenderer: SurfaceViewRenderer? = null
     private var remoteRenderer: SurfaceViewRenderer? = null
     private var client: RealTimeClient? = null
-    private var surfaceTextureHelper: SurfaceTextureHelper? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -77,55 +74,25 @@ class MainActivity : ComponentActivity() {
 
     private fun initializeWebRTC() {
         eglBase = EglBase.create()
-        val eglContext = eglBase!!.eglBaseContext
-
-        PeerConnectionFactory.initialize(
-            PeerConnectionFactory.InitializationOptions.builder(applicationContext)
-                .setEnableInternalTracer(false)
-                .createInitializationOptions()
-        )
-
-        peerConnectionFactory = PeerConnectionFactory.builder()
-            .setVideoEncoderFactory(DefaultVideoEncoderFactory(eglContext, true, true))
-            .setVideoDecoderFactory(DefaultVideoDecoderFactory(eglContext))
-            .createPeerConnectionFactory()
     }
 
-    private fun startCamera() {
-        val factory = peerConnectionFactory ?: return
-        val egl = eglBase ?: return
-
-        val enumerator = Camera2Enumerator(this)
-        val deviceName = enumerator.deviceNames.firstOrNull { enumerator.isFrontFacing(it) }
-            ?: enumerator.deviceNames.firstOrNull()
-            ?: return
-
-        val capturer = enumerator.createCapturer(deviceName, null)
-        videoCapturer = capturer
-
-        videoSource = factory.createVideoSource(capturer.isScreencast)
-        surfaceTextureHelper = SurfaceTextureHelper.create("CaptureThread", egl.eglBaseContext)
-        capturer.initialize(surfaceTextureHelper, applicationContext, videoSource!!.capturerObserver)
-        capturer.startCapture(1280, 720, 30)
-
-        localVideoTrack = factory.createVideoTrack("local_video", videoSource)
-        localVideoTrack?.setEnabled(true)
-        localRenderer?.let { localVideoTrack?.addSink(it) }
+    private fun startCamera(rtClient: RealTimeClient) {
+        val cameraTrack = rtClient.createCameraVideoTrack(
+            facing = FacingMode.FRONT,
+            mirror = MirrorMode.AUTO,
+        )
+        cameraVideoTrack = cameraTrack
+        localVideoTrack = cameraTrack.track
+        localRenderer?.let { cameraTrack.track.addSink(it) }
     }
 
     private fun stopCamera() {
-        localRenderer?.let { localVideoTrack?.removeSink(it) }
-        localVideoTrack?.dispose()
+        cameraVideoTrack?.let { track ->
+            localRenderer?.let { track.track.removeSink(it) }
+            track.stop()
+        }
+        cameraVideoTrack = null
         localVideoTrack = null
-        try {
-            videoCapturer?.stopCapture()
-        } catch (_: Exception) {}
-        videoCapturer?.dispose()
-        videoCapturer = null
-        videoSource?.dispose()
-        videoSource = null
-        surfaceTextureHelper?.dispose()
-        surfaceTextureHelper = null
     }
 
     private fun showUI() {
@@ -259,7 +226,8 @@ class MainActivity : ComponentActivity() {
                         factory = { ctx ->
                             SurfaceViewRenderer(ctx).also { renderer ->
                                 renderer.init(eglBase!!.eglBaseContext, null)
-                                renderer.setMirror(true)
+                                // No setMirror — the SDK pre-flips the input via MirrorMode.AUTO,
+                                // so the local preview is already in natural selfie orientation.
                                 renderer.setEnableHardwareScaler(true)
                                 localRenderer = renderer
                                 // If camera already started, add sink
@@ -402,11 +370,12 @@ class MainActivity : ComponentActivity() {
             Button(
                 onClick = {
                     if (isConnected || connectionState == ConnectionState.CONNECTING) {
-                        // Disconnect
+                        // Disconnect — stop the camera before releasing the client,
+                        // since the capturer/source/track are tied to the client's factory.
                         client?.disconnect()
+                        stopCamera()
                         client?.release()
                         client = null
-                        stopCamera()
                         statusMessage = "Disconnected"
                         connectionState = ConnectionState.DISCONNECTED
                     } else {
@@ -419,9 +388,6 @@ class MainActivity : ComponentActivity() {
 
                         coroutineScope.launch {
                             try {
-                                // Start camera
-                                startCamera()
-
                                 // Create client
                                 val rtClient = RealTimeClient(
                                     context = context,
@@ -433,6 +399,9 @@ class MainActivity : ComponentActivity() {
                                 )
                                 rtClient.initialize(eglBase)
                                 client = rtClient
+
+                                // Start camera via the SDK (front camera, auto-mirror)
+                                startCamera(rtClient)
 
                                 val initialPromptObj = if (prompt.isNotBlank()) {
                                     InitialPrompt(text = prompt, enhance = enhancePrompt)
@@ -453,9 +422,9 @@ class MainActivity : ComponentActivity() {
                             } catch (e: Exception) {
                                 statusMessage = "Failed: ${e.message}"
                                 connectionState = ConnectionState.DISCONNECTED
+                                stopCamera()
                                 client?.release()
                                 client = null
-                                stopCamera()
                             }
                         }
                     }
@@ -868,13 +837,11 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         client?.disconnect()
+        stopCamera()
         client?.release()
         client = null
-        stopCamera()
         localRenderer?.release()
         remoteRenderer?.release()
-        peerConnectionFactory?.dispose()
-        peerConnectionFactory = null
         eglBase?.release()
         eglBase = null
     }

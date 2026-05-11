@@ -27,6 +27,29 @@ data class ConnectOptions(
 )
 
 /**
+ * Holder for a camera-driven [VideoTrack] produced by [RealTimeClient.createCameraVideoTrack].
+ * Call [stop] when finished — typically on disconnect — to release the capturer, source,
+ * track, and texture helper in the correct order.
+ */
+class CameraVideoTrack internal constructor(
+    val track: VideoTrack,
+    val source: VideoSource,
+    val capturer: VideoCapturer,
+    val surfaceTextureHelper: SurfaceTextureHelper,
+) {
+    private val stopped = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    fun stop() {
+        if (!stopped.compareAndSet(false, true)) return
+        try { capturer.stopCapture() } catch (_: Exception) {}
+        capturer.dispose()
+        track.dispose()
+        source.dispose()
+        surfaceTextureHelper.dispose()
+    }
+}
+
+/**
  * The main entry point for the Decart Realtime SDK.
  *
  * Usage:
@@ -257,6 +280,96 @@ class RealTimeClient(
      */
     fun createVideoTrack(id: String, source: VideoSource): VideoTrack? =
         peerConnectionFactory?.createVideoTrack(id, source)
+
+    /**
+     * One-line camera setup that produces a ready-to-send [VideoTrack].
+     *
+     * Picks the first device matching [facing] (falling back to the first available device),
+     * wires up the standard Camera2Enumerator → VideoCapturer → VideoSource → VideoTrack
+     * chain using the client's [PeerConnectionFactory] and EGL context, and optionally
+     * pre-flips the input via [MirrorVideoProcessor] for natural selfie rendering.
+     *
+     * Call [initialize] first. Call [CameraVideoTrack.stop] when finished, *before*
+     * [release] — the resulting capturer/source/track are tied to this client's factory.
+     *
+     * The caller must hold `android.permission.CAMERA` at the time of this call.
+     *
+     * @param facing Camera direction to pick from [Camera2Enumerator].
+     * @param mirror Whether to pre-flip frames horizontally. [MirrorMode.AUTO] mirrors
+     *   iff [facing] is [FacingMode.FRONT].
+     * @param width Capture width.
+     * @param height Capture height.
+     * @param fps Capture frame rate.
+     * @param trackId Stable id for the resulting [VideoTrack].
+     */
+    fun createCameraVideoTrack(
+        facing: FacingMode = FacingMode.FRONT,
+        mirror: MirrorMode = MirrorMode.AUTO,
+        width: Int = 1280,
+        height: Int = 720,
+        fps: Int = 30,
+        trackId: String = "local_video",
+    ): CameraVideoTrack {
+        val factory = peerConnectionFactory
+            ?: throw IllegalStateException("RealTimeClient.initialize() must be called before createCameraVideoTrack()")
+        val egl = eglBase
+            ?: throw IllegalStateException("RealTimeClient.initialize() must be called before createCameraVideoTrack()")
+
+        val enumerator = Camera2Enumerator(context)
+        val wantsFront = facing == FacingMode.FRONT
+        val deviceName = enumerator.deviceNames.firstOrNull { enumerator.isFrontFacing(it) == wantsFront }
+            ?: enumerator.deviceNames.firstOrNull()
+            ?: throw IllegalStateException("No camera devices available")
+
+        val capturer = enumerator.createCapturer(deviceName, null)
+            ?: throw IllegalStateException("Failed to create camera capturer for $deviceName")
+
+        var source: VideoSource? = null
+        var surfaceTextureHelper: SurfaceTextureHelper? = null
+        var track: VideoTrack? = null
+        var captureStarted = false
+        try {
+            source = factory.createVideoSource(capturer.isScreencast)
+                ?: throw IllegalStateException("Failed to create video source")
+
+            val shouldMirror = when (mirror) {
+                MirrorMode.OFF -> false
+                MirrorMode.ON -> true
+                MirrorMode.AUTO -> enumerator.isFrontFacing(deviceName)
+            }
+            if (shouldMirror) {
+                source.setVideoProcessor(MirrorVideoProcessor(logger))
+            }
+
+            surfaceTextureHelper = SurfaceTextureHelper.create("CaptureThread", egl.eglBaseContext)
+            capturer.initialize(surfaceTextureHelper, context, source.capturerObserver)
+            capturer.startCapture(width, height, fps)
+            captureStarted = true
+
+            track = factory.createVideoTrack(trackId, source)
+                ?: throw IllegalStateException("Failed to create video track")
+            track.setEnabled(true)
+
+            return CameraVideoTrack(
+                track = track,
+                source = source,
+                capturer = capturer,
+                surfaceTextureHelper = surfaceTextureHelper,
+            )
+        } catch (t: Throwable) {
+            // Mirror the disposal order of CameraVideoTrack.stop():
+            //   stopCapture → capturer → track → source → surfaceTextureHelper.
+            // The capturer holds a reference to the SurfaceTextureHelper, so dispose it first.
+            if (captureStarted) {
+                try { capturer.stopCapture() } catch (_: Exception) {}
+            }
+            capturer.dispose()
+            track?.dispose()
+            source?.dispose()
+            surfaceTextureHelper?.dispose()
+            throw t
+        }
+    }
 
     /**
      * Release all resources. Call when done with the client.
