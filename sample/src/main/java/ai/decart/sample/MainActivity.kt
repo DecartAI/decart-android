@@ -32,7 +32,7 @@ import ai.decart.sdk.realtime.*
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import io.livekit.android.LiveKit
-import io.livekit.android.renderer.SurfaceViewRenderer
+import io.livekit.android.renderer.TextureViewRenderer
 import io.livekit.android.room.Room
 import io.livekit.android.room.track.CameraPosition
 import io.livekit.android.room.track.LocalVideoTrack
@@ -49,8 +49,9 @@ class MainActivity : ComponentActivity() {
     private var previewVideoTrack: LocalVideoTrack? = null
     private var localVideoTrack: VideoTrack? = null
     private var remoteVideoTrack: VideoTrack? = null
-    private var localRenderer: SurfaceViewRenderer? = null
-    private var remoteRenderer: SurfaceViewRenderer? = null
+    private var localRenderer: TextureViewRenderer? = null
+    private var localRendererInitialized = false
+    private var remoteRenderer: TextureViewRenderer? = null
     private var client: RealTimeClient? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -116,6 +117,7 @@ class MainActivity : ComponentActivity() {
             track.startCapture()
             previewRoom = room
             previewVideoTrack = track
+            initializeLocalRendererWithPreviewRoom()
             attachLocalVideo(track)
         } catch (e: Exception) {
             Toast.makeText(this, "Failed to start camera preview: ${e.message}", Toast.LENGTH_LONG).show()
@@ -134,6 +136,15 @@ class MainActivity : ComponentActivity() {
         previewTrack.dispose()
         previewRoom?.disconnect()
         previewRoom = null
+    }
+
+    private fun initializeLocalRendererWithPreviewRoom() {
+        val room = previewRoom ?: return
+        val renderer = localRenderer ?: return
+        if (localRendererInitialized) return
+        room.initVideoRenderer(renderer)
+        renderer.setEnableHardwareScaler(true)
+        localRendererInitialized = true
     }
 
     private fun clearVideoTracks() {
@@ -276,10 +287,9 @@ class MainActivity : ComponentActivity() {
                 ) {
                     AndroidView(
                         factory = { ctx ->
-                            SurfaceViewRenderer(ctx).also { renderer ->
-                                renderer.init(eglBase!!.eglBaseContext, null)
-                                renderer.setEnableHardwareScaler(true)
+                            TextureViewRenderer(ctx).also { renderer ->
                                 localRenderer = renderer
+                                initializeLocalRendererWithPreviewRoom()
                                 localVideoTrack?.addRenderer(renderer)
                             }
                         },
@@ -302,7 +312,7 @@ class MainActivity : ComponentActivity() {
                 ) {
                     AndroidView(
                         factory = { ctx ->
-                            SurfaceViewRenderer(ctx).also { renderer ->
+                            TextureViewRenderer(ctx).also { renderer ->
                                 renderer.init(eglBase!!.eglBaseContext, null)
                                 renderer.setEnableHardwareScaler(true)
                                 remoteRenderer = renderer
