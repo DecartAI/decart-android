@@ -7,12 +7,12 @@ Android SDK for Decart realtime streaming and batch video generation.
 
 ## Features
 
-- Real-time video restyling and editing via WebRTC
+- Real-time video restyling and editing via LiveKit media transport
 - Batch video generation via `/v1/jobs/*` queue APIs
 - Built-in realtime and video model registries
 - Kotlin coroutines and Flow-based reactive state management
-- Observable connection state, errors, and WebRTC stats
-- Camera and audio track support
+- Observable connection state, remote media streams, errors, and diagnostics
+- LiveKit camera and audio publishing support
 
 ## Requirements
 
@@ -48,81 +48,46 @@ dependencies {
 import ai.decart.sdk.DecartClient
 import ai.decart.sdk.DecartClientConfig
 import ai.decart.sdk.realtime.ConnectOptions
+import ai.decart.sdk.realtime.FacingMode
 import ai.decart.sdk.realtime.InitialPrompt
 import ai.decart.sdk.RealtimeModels
 
 val client = DecartClient(context, DecartClientConfig(apiKey = "your-api-key"))
 val realtime = client.realtime
 
-// 1. Initialize WebRTC
-realtime.initialize(eglBase)
-
-// 2. Connect with a camera track
+// 1. Connect and publish the device camera through LiveKit
 realtime.connect(
-    localVideoTrack = cameraTrack,
-    localAudioTrack = null,
-    options = ConnectOptions(
+    ConnectOptions(
         model = RealtimeModels.LUCY_RESTYLE_2,
-        onRemoteVideoTrack = { track ->
-            // Display the transformed video
-            remoteRenderer.addSink(track)
+        initialPrompt = InitialPrompt("a cyberpunk cityscape"),
+        facing = FacingMode.FRONT,
+        publishCamera = true,
+        onRemoteStream = { stream ->
+            // Display stream.videoTrack with a LiveKit renderer.
         },
-        initialPrompt = InitialPrompt("a cyberpunk cityscape")
-    )
+    ),
 )
 
-// 3. Change prompt during session
+// 2. Change prompt during session
 realtime.setPrompt("a sunny beach scene", enhance = true)
 
-// 4. Disconnect when done
+// 3. Disconnect when done
 realtime.disconnect()
 client.release()
 ```
 
-### Front-camera mirroring
+### LiveKit rendering
 
-The SDK can pre-flip the input video horizontally before sending it to the server.
-For selfie use cases this means you can render the remote stream as-is, without
-applying `SurfaceViewRenderer.setMirror(true)` on the remote view — which would
-also flip any server-baked overlay pixels (e.g. watermarks).
-
-Recommended: use the camera helper, which wraps `Camera2Enumerator`, the capturer,
-the source, and the track in one call:
+Realtime media tracks are LiveKit tracks. Audio plays automatically after subscription;
+video tracks can be rendered with LiveKit's Android renderer:
 
 ```kotlin
-import ai.decart.sdk.realtime.FacingMode
-import ai.decart.sdk.realtime.MirrorMode
+import io.livekit.android.renderer.SurfaceViewRenderer
 
-realtime.initialize(eglBase)
-
-val cameraTrack = realtime.createCameraVideoTrack(
-    facing = FacingMode.FRONT,
-    mirror = MirrorMode.AUTO, // OFF | ON | AUTO (AUTO mirrors iff facing == FRONT)
-)
-
-realtime.connect(
-    localVideoTrack = cameraTrack.track,
-    options = ConnectOptions(model = RealtimeModels.LUCY_2_1, onRemoteVideoTrack = { /* ... */ }),
-)
-
-// On teardown:
-cameraTrack.stop()
+realtime.remoteStreamUpdates.collect { stream ->
+    stream.videoTrack?.addRenderer(remoteRenderer)
+}
 ```
-
-If you already manage your own camera pipeline, attach the public
-`MirrorVideoProcessor` to your `VideoSource` directly:
-
-```kotlin
-import ai.decart.sdk.realtime.MirrorVideoProcessor
-
-val source = realtime.createVideoSource()!!
-source.setVideoProcessor(MirrorVideoProcessor())
-// ...wire your VideoCapturer to source.capturerObserver as usual.
-```
-
-When you pre-flip the input, render the remote stream **without**
-`setMirror(true)` on the remote `SurfaceViewRenderer` so server-baked overlays
-appear correctly oriented.
 
 ### Output resolution
 
@@ -132,12 +97,11 @@ Opt into 1080p output for a realtime session (defaults to 720p server-side):
 import ai.decart.sdk.realtime.Resolution
 
 realtime.connect(
-    localVideoTrack = cameraTrack.track,
-    options = ConnectOptions(
+    ConnectOptions(
         model = RealtimeModels.LUCY_2_1,
         resolution = Resolution.P1080, // default: server-side 720p
-        onRemoteVideoTrack = { /* ... */ },
-    ),
+        onRemoteStream = { /* ... */ },
+    )
 )
 ```
 
@@ -221,6 +185,7 @@ client.queue.submit(VideoModels.LUCY_RESTYLE_2, restyle)
 |-------|----------|-----------|-----|
 | Lucy 2.1 | `RealtimeModels.LUCY_2_1` | 1088x624 | 30 |
 | Lucy 2.1 VTON | `RealtimeModels.LUCY_2_1_VTON` | 1088x624 | 30 |
+| Lucy VTON 2 | `RealtimeModels.LUCY_VTON_2` | 1088x624 | 30 |
 | Lucy Restyle 2 | `RealtimeModels.LUCY_RESTYLE_2` | 1280x704 | 30 |
 
 ### Batch Video Models
@@ -230,11 +195,12 @@ client.queue.submit(VideoModels.LUCY_RESTYLE_2, restyle)
 | Lucy Clip | `VideoModels.LUCY_CLIP` | `/v1/jobs/lucy-clip` | 1280x704 | 25 |
 | Lucy 2.1 | `VideoModels.LUCY_2_1` | `/v1/jobs/lucy-2.1` | 1088x624 | 20 |
 | Lucy 2.1 VTON | `VideoModels.LUCY_2_1_VTON` | `/v1/jobs/lucy-2.1-vton` | 1088x624 | 20 |
+| Lucy VTON 2 | `VideoModels.LUCY_VTON_2` | `/v1/jobs/lucy-vton-2` | 1088x624 | 20 |
 | Lucy Restyle 2 | `VideoModels.LUCY_RESTYLE_2` | `/v1/jobs/lucy-restyle-2` | 1280x704 | 22 |
 
 Typed input helpers:
 
-- `VideoEditInput` (`lucy-2.1`, `lucy-2.1-vton`, `lucy-clip`)
+- `VideoEditInput` (`lucy-2.1`, `lucy-2.1-vton`, `lucy-vton-2`, `lucy-clip`)
 - `VideoRestyleInput` (`lucy-restyle-2`)
 
 ## API Reference
@@ -246,7 +212,7 @@ Typed input helpers:
 | `DecartClient` | Unified entry point exposing `realtime` and `queue` clients |
 | `RealTimeClient` | Main entry point for real-time video streaming |
 | `RealTimeClientConfig` | Client configuration (API key, base URL, logger) |
-| `ConnectOptions` | Connection parameters (model, callbacks, initial prompt) |
+| `ConnectOptions` | Connection parameters (model, LiveKit stream callbacks, initial prompt) |
 | `InitialPrompt` | Initial prompt with optional enhancement |
 | `Resolution` | Output resolution enum (`P720`, `P1080`) for `ConnectOptions.resolution` |
 | `ConnectionState` | Connection lifecycle enum (`DISCONNECTED`, `CONNECTING`, `CONNECTED`, `GENERATING`, `RECONNECTING`) |
@@ -266,9 +232,7 @@ Typed input helpers:
 
 | Method | Description |
 |--------|-------------|
-| `initialize(eglBase?)` | Initialize WebRTC (optional, auto-called on connect) |
-| `createCameraVideoTrack(facing, mirror, width, height, fps, trackId)` | One-line camera setup, optional pre-flip via `MirrorVideoProcessor` |
-| `connect(videoTrack, audioTrack, options)` | Connect to a model |
+| `connect(options)` | Connect to a model, join the returned LiveKit room, and optionally publish camera/microphone |
 | `disconnect()` | End the current session |
 | `setPrompt(prompt, enhance)` | Update the prompt |
 | `setImage(imageBase64, prompt, enhance, timeout)` | Set a reference image |
@@ -280,7 +244,9 @@ Typed input helpers:
 |----------|------|-------------|
 | `connectionState` | `StateFlow<ConnectionState>` | Current connection state |
 | `errors` | `SharedFlow<DecartError>` | Error events |
-| `stats` | `SharedFlow<WebRTCStats>` | WebRTC performance stats |
+| `localStreamUpdates` | `SharedFlow<RealtimeMediaStream>` | Local LiveKit stream updates |
+| `remoteStreamUpdates` | `SharedFlow<RealtimeMediaStream>` | Remote LiveKit stream updates |
+| `stats` | `SharedFlow<WebRTCStats>` | Legacy stats flow; LiveKit stats are not surfaced yet |
 | `diagnostics` | `SharedFlow<DiagnosticEvent>` | Connection diagnostic events |
 
 ### QueueClient
@@ -322,7 +288,7 @@ Queue APIs throw operation-specific exceptions:
 
 See the [`sample/`](sample/) directory for a Jetpack Compose app with:
 
-- Realtime tab: camera + WebRTC streaming
+- Realtime tab: camera + LiveKit streaming
 - Video tab: batch job submission, status updates, and result playback
 
 ## Example App

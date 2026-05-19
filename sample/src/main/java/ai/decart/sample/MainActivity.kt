@@ -31,14 +31,16 @@ import ai.decart.sdk.queue.*
 import ai.decart.sdk.realtime.*
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import org.webrtc.*
+import io.livekit.android.renderer.SurfaceViewRenderer
+import io.livekit.android.room.track.VideoTrack
+import livekit.org.webrtc.EglBase
 import java.io.File
 
 class MainActivity : ComponentActivity() {
 
     private var eglBase: EglBase? = null
-    private var cameraVideoTrack: CameraVideoTrack? = null
     private var localVideoTrack: VideoTrack? = null
+    private var remoteVideoTrack: VideoTrack? = null
     private var localRenderer: SurfaceViewRenderer? = null
     private var remoteRenderer: SurfaceViewRenderer? = null
     private var client: RealTimeClient? = null
@@ -50,7 +52,7 @@ class MainActivity : ComponentActivity() {
             ActivityResultContracts.RequestMultiplePermissions()
         ) { permissions ->
             if (permissions.values.all { it }) {
-                initializeWebRTC()
+                initializeLiveKitRendering()
                 showUI()
             } else {
                 Toast.makeText(this, "Camera and mic permissions required", Toast.LENGTH_LONG).show()
@@ -62,7 +64,7 @@ class MainActivity : ComponentActivity() {
         val hasMic = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
         if (hasCamera && hasMic) {
-            initializeWebRTC()
+            initializeLiveKitRendering()
             showUI()
         } else {
             permissionLauncher.launch(arrayOf(
@@ -72,27 +74,31 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun initializeWebRTC() {
+    private fun initializeLiveKitRendering() {
         eglBase = EglBase.create()
     }
 
-    private fun startCamera(rtClient: RealTimeClient) {
-        val cameraTrack = rtClient.createCameraVideoTrack(
-            facing = FacingMode.FRONT,
-            mirror = MirrorMode.AUTO,
-        )
-        cameraVideoTrack = cameraTrack
-        localVideoTrack = cameraTrack.track
-        localRenderer?.let { cameraTrack.track.addSink(it) }
+    private fun attachLocalVideo(track: VideoTrack?) {
+        localRenderer?.let { renderer ->
+            localVideoTrack?.removeRenderer(renderer)
+            track?.addRenderer(renderer)
+        }
+        localVideoTrack = track
     }
 
-    private fun stopCamera() {
-        cameraVideoTrack?.let { track ->
-            localRenderer?.let { track.track.removeSink(it) }
-            track.stop()
+    private fun attachRemoteVideo(track: VideoTrack?) {
+        remoteRenderer?.let { renderer ->
+            remoteVideoTrack?.removeRenderer(renderer)
+            track?.addRenderer(renderer)
         }
-        cameraVideoTrack = null
+        remoteVideoTrack = track
+    }
+
+    private fun clearVideoTracks() {
+        localRenderer?.let { renderer -> localVideoTrack?.removeRenderer(renderer) }
+        remoteRenderer?.let { renderer -> remoteVideoTrack?.removeRenderer(renderer) }
         localVideoTrack = null
+        remoteVideoTrack = null
     }
 
     private fun showUI() {
@@ -163,7 +169,7 @@ class MainActivity : ComponentActivity() {
     }
 
     // -------------------------------------------------------------------------
-    // Realtime tab — existing WebRTC UI (unchanged logic)
+    // Realtime tab — LiveKit media UI
     // -------------------------------------------------------------------------
 
     @OptIn(ExperimentalMaterial3Api::class)
@@ -226,12 +232,9 @@ class MainActivity : ComponentActivity() {
                         factory = { ctx ->
                             SurfaceViewRenderer(ctx).also { renderer ->
                                 renderer.init(eglBase!!.eglBaseContext, null)
-                                // No setMirror — the SDK pre-flips the input via MirrorMode.AUTO,
-                                // so the local preview is already in natural selfie orientation.
                                 renderer.setEnableHardwareScaler(true)
                                 localRenderer = renderer
-                                // If camera already started, add sink
-                                localVideoTrack?.addSink(renderer)
+                                localVideoTrack?.addRenderer(renderer)
                             }
                         },
                         modifier = Modifier.fillMaxSize()
@@ -257,6 +260,7 @@ class MainActivity : ComponentActivity() {
                                 renderer.init(eglBase!!.eglBaseContext, null)
                                 renderer.setEnableHardwareScaler(true)
                                 remoteRenderer = renderer
+                                remoteVideoTrack?.addRenderer(renderer)
                             }
                         },
                         modifier = Modifier.fillMaxSize()
@@ -370,10 +374,8 @@ class MainActivity : ComponentActivity() {
             Button(
                 onClick = {
                     if (isConnected || connectionState == ConnectionState.CONNECTING) {
-                        // Disconnect — stop the camera before releasing the client,
-                        // since the capturer/source/track are tied to the client's factory.
                         client?.disconnect()
-                        stopCamera()
+                        clearVideoTracks()
                         client?.release()
                         client = null
                         statusMessage = "Disconnected"
@@ -397,32 +399,32 @@ class MainActivity : ComponentActivity() {
                                         logger = AndroidLogger(LogLevel.DEBUG)
                                     )
                                 )
-                                rtClient.initialize(eglBase)
                                 client = rtClient
-
-                                // Start camera via the SDK (front camera, auto-mirror)
-                                startCamera(rtClient)
 
                                 val initialPromptObj = if (prompt.isNotBlank()) {
                                     InitialPrompt(text = prompt, enhance = enhancePrompt)
                                 } else null
 
-                                val remote = remoteRenderer!!
                                 rtClient.connect(
-                                    localVideoTrack = localVideoTrack,
-                                    options = ConnectOptions(
+                                    ConnectOptions(
                                         model = selectedModel,
-                                        onRemoteVideoTrack = { track ->
-                                            track.addSink(remote)
+                                        initialPrompt = initialPromptObj,
+                                        facing = FacingMode.FRONT,
+                                        publishCamera = true,
+                                        publishMicrophone = false,
+                                        onLocalStream = { stream ->
+                                            attachLocalVideo(stream.videoTrack)
                                         },
-                                        initialPrompt = initialPromptObj
-                                    )
+                                        onRemoteStream = { stream ->
+                                            attachRemoteVideo(stream.videoTrack)
+                                        }
+                                    ),
                                 )
                                 statusMessage = "Connected!"
                             } catch (e: Exception) {
                                 statusMessage = "Failed: ${e.message}"
                                 connectionState = ConnectionState.DISCONNECTED
-                                stopCamera()
+                                clearVideoTracks()
                                 client?.release()
                                 client = null
                             }
@@ -837,7 +839,7 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         client?.disconnect()
-        stopCamera()
+        clearVideoTracks()
         client?.release()
         client = null
         localRenderer?.release()

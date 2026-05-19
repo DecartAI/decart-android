@@ -107,6 +107,30 @@ class SignalingMessagesTest {
         assertEquals(8080, msg.serverPort)
     }
 
+    @Test
+    fun `parse livekit room info`() {
+        val json = """{"type":"livekit_room_info","livekit_url":"wss://livekit.example.com","token":"token-123","room_name":"room-123","session_id":"session-123"}"""
+        val msg = SignalingMessageParser.parse(json) as LiveKitRoomInfoMessage
+        assertEquals("wss://livekit.example.com", msg.liveKitUrl)
+        assertEquals("token-123", msg.token)
+        assertEquals("room-123", msg.roomName)
+        assertEquals("session-123", msg.sessionId)
+    }
+
+    @Test
+    fun `parse status message`() {
+        val msg = SignalingMessageParser.parse("""{"type":"status","status":"waiting"}""") as StatusMessage
+        assertEquals("waiting", msg.status)
+    }
+
+    @Test
+    fun `parse queue position message`() {
+        val json = """{"type":"queue_position","queue_position":2,"queue_size":5}"""
+        val msg = SignalingMessageParser.parse(json) as QueuePositionMessage
+        assertEquals(2, msg.queuePosition)
+        assertEquals(5, msg.queueSize)
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun `parse unknown type throws`() {
         SignalingMessageParser.parse("""{"type":"unknown_type"}""")
@@ -196,6 +220,12 @@ class SignalingMessagesTest {
         ))
         assertTrue(json.contains(""""type":"set_image""""))
         assertTrue(json.contains(""""image_data":null"""))
+    }
+
+    @Test
+    fun `serialize livekit join message`() {
+        val json = SignalingMessageParser.serialize(LiveKitJoinMessage)
+        assertEquals("""{"type":"livekit_join"}""", json)
     }
 
     // ── Round-trip tests ────────────────────────────────────────────────

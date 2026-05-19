@@ -339,6 +339,11 @@ class WebRTCConnection(private val callbacks: ConnectionCallbacks = ConnectionCa
                 is IceCandidateMessage -> {
                     handleIceCandidate(msg)
                 }
+                is LiveKitRoomInfoMessage,
+                is StatusMessage,
+                is QueuePositionMessage -> {
+                    // LiveKit signaling is handled by the new SignalingChannel path.
+                }
             }
         } catch (e: Exception) {
             logger.error("Signaling handler error", mapOf("error" to e.toString()))

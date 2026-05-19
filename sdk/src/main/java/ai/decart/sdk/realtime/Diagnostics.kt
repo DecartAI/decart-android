@@ -11,6 +11,8 @@ enum class ConnectionPhase {
     AVATAR_IMAGE,
     INITIAL_PROMPT,
     WEBRTC_HANDSHAKE,
+    LIVEKIT_CONNECT,
+    LIVEKIT_PUBLISH,
     TOTAL
 }
 

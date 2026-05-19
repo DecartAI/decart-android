@@ -1,6 +1,12 @@
 # WebRTC
 -keep class org.webrtc.** { *; }
 -dontwarn org.webrtc.**
+-keep class livekit.org.webrtc.** { *; }
+-dontwarn livekit.org.webrtc.**
+
+# LiveKit
+-keep class io.livekit.** { *; }
+-dontwarn io.livekit.**
 
 # kotlinx.serialization
 -keepattributes *Annotation*, InnerClasses
