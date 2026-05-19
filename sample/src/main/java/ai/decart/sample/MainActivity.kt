@@ -31,14 +31,22 @@ import ai.decart.sdk.queue.*
 import ai.decart.sdk.realtime.*
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import io.livekit.android.LiveKit
 import io.livekit.android.renderer.SurfaceViewRenderer
+import io.livekit.android.room.Room
+import io.livekit.android.room.track.CameraPosition
+import io.livekit.android.room.track.LocalVideoTrack
+import io.livekit.android.room.track.LocalVideoTrackOptions
 import io.livekit.android.room.track.VideoTrack
+import io.livekit.android.room.track.VideoCaptureParameter
 import livekit.org.webrtc.EglBase
 import java.io.File
 
 class MainActivity : ComponentActivity() {
 
     private var eglBase: EglBase? = null
+    private var previewRoom: Room? = null
+    private var previewVideoTrack: LocalVideoTrack? = null
     private var localVideoTrack: VideoTrack? = null
     private var remoteVideoTrack: VideoTrack? = null
     private var localRenderer: SurfaceViewRenderer? = null
@@ -94,9 +102,44 @@ class MainActivity : ComponentActivity() {
         remoteVideoTrack = track
     }
 
+    private fun startPreviewCamera() {
+        if (previewVideoTrack != null || client != null) return
+        try {
+            val room = LiveKit.create(applicationContext)
+            val track = room.localParticipant.createVideoTrack(
+                name = "preview_video",
+                options = LocalVideoTrackOptions(
+                    position = CameraPosition.FRONT,
+                    captureParams = VideoCaptureParameter(1280, 720, 30),
+                ),
+            )
+            track.startCapture()
+            previewRoom = room
+            previewVideoTrack = track
+            attachLocalVideo(track)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Failed to start camera preview: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun stopPreviewCamera() {
+        val previewTrack = previewVideoTrack ?: return
+        localRenderer?.let { renderer -> previewTrack.removeRenderer(renderer) }
+        previewVideoTrack = null
+        if (localVideoTrack === previewTrack) {
+            localVideoTrack = null
+        }
+        try { previewTrack.stopCapture() } catch (_: Exception) {}
+        previewTrack.stop()
+        previewTrack.dispose()
+        previewRoom?.disconnect()
+        previewRoom = null
+    }
+
     private fun clearVideoTracks() {
         localRenderer?.let { renderer -> localVideoTrack?.removeRenderer(renderer) }
         remoteRenderer?.let { renderer -> remoteVideoTrack?.removeRenderer(renderer) }
+        stopPreviewCamera()
         localVideoTrack = null
         remoteVideoTrack = null
     }
@@ -205,6 +248,9 @@ class MainActivity : ComponentActivity() {
                     statusMessage = "Error: ${error.message}"
                 }
             }
+        }
+        LaunchedEffect(Unit) {
+            startPreviewCamera()
         }
 
         val isConnected = connectionState == ConnectionState.CONNECTED ||
@@ -380,6 +426,7 @@ class MainActivity : ComponentActivity() {
                         client = null
                         statusMessage = "Disconnected"
                         connectionState = ConnectionState.DISCONNECTED
+                        startPreviewCamera()
                     } else {
                         if (apiKey.isBlank()) {
                             statusMessage = "Please enter an API key"
@@ -390,6 +437,7 @@ class MainActivity : ComponentActivity() {
 
                         coroutineScope.launch {
                             try {
+                                stopPreviewCamera()
                                 // Create client
                                 val rtClient = RealTimeClient(
                                     context = context,
@@ -427,6 +475,7 @@ class MainActivity : ComponentActivity() {
                                 clearVideoTracks()
                                 client?.release()
                                 client = null
+                                startPreviewCamera()
                             }
                         }
                     }
