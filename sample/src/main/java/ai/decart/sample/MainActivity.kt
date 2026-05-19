@@ -50,8 +50,9 @@ class MainActivity : ComponentActivity() {
     private var localVideoTrack: VideoTrack? = null
     private var remoteVideoTrack: VideoTrack? = null
     private var localRenderer: TextureViewRenderer? = null
-    private var localRendererInitialized = false
+    private var localRendererRoom: Room? = null
     private var remoteRenderer: TextureViewRenderer? = null
+    private var remoteRendererRoom: Room? = null
     private var client: RealTimeClient? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -87,20 +88,22 @@ class MainActivity : ComponentActivity() {
         eglBase = EglBase.create()
     }
 
-    private fun attachLocalVideo(track: VideoTrack?) {
+    private fun attachLocalVideo(stream: RealtimeMediaStream) {
         localRenderer?.let { renderer ->
+            initializeRenderer(renderer, stream.room, isLocal = true)
             localVideoTrack?.removeRenderer(renderer)
-            track?.addRenderer(renderer)
+            stream.videoTrack?.addRenderer(renderer)
         }
-        localVideoTrack = track
+        localVideoTrack = stream.videoTrack
     }
 
-    private fun attachRemoteVideo(track: VideoTrack?) {
+    private fun attachRemoteVideo(stream: RealtimeMediaStream) {
         remoteRenderer?.let { renderer ->
+            initializeRenderer(renderer, stream.room, isLocal = false)
             remoteVideoTrack?.removeRenderer(renderer)
-            track?.addRenderer(renderer)
+            stream.videoTrack?.addRenderer(renderer)
         }
-        remoteVideoTrack = track
+        remoteVideoTrack = stream.videoTrack
     }
 
     private fun startPreviewCamera() {
@@ -117,8 +120,13 @@ class MainActivity : ComponentActivity() {
             track.startCapture()
             previewRoom = room
             previewVideoTrack = track
-            initializeLocalRendererWithPreviewRoom()
-            attachLocalVideo(track)
+            attachLocalVideo(
+                RealtimeMediaStream(
+                    videoTrack = track,
+                    id = RealtimeMediaStream.LOCAL_STREAM_ID,
+                    room = room,
+                ),
+            )
         } catch (e: Exception) {
             Toast.makeText(this, "Failed to start camera preview: ${e.message}", Toast.LENGTH_LONG).show()
         }
@@ -138,13 +146,20 @@ class MainActivity : ComponentActivity() {
         previewRoom = null
     }
 
-    private fun initializeLocalRendererWithPreviewRoom() {
-        val room = previewRoom ?: return
-        val renderer = localRenderer ?: return
-        if (localRendererInitialized) return
-        room.initVideoRenderer(renderer)
+    private fun initializeRenderer(renderer: TextureViewRenderer, room: Room?, isLocal: Boolean) {
+        room ?: return
+        val currentRoom = if (isLocal) localRendererRoom else remoteRendererRoom
+        if (currentRoom == room) return
+        if (currentRoom != null) {
+            renderer.release()
+        }
         renderer.setEnableHardwareScaler(true)
-        localRendererInitialized = true
+        room.initVideoRenderer(renderer)
+        if (isLocal) {
+            localRendererRoom = room
+        } else {
+            remoteRendererRoom = room
+        }
     }
 
     private fun clearVideoTracks() {
@@ -153,6 +168,8 @@ class MainActivity : ComponentActivity() {
         stopPreviewCamera()
         localVideoTrack = null
         remoteVideoTrack = null
+        localRendererRoom = null
+        remoteRendererRoom = null
     }
 
     private fun showUI() {
@@ -289,7 +306,6 @@ class MainActivity : ComponentActivity() {
                         factory = { ctx ->
                             TextureViewRenderer(ctx).also { renderer ->
                                 localRenderer = renderer
-                                initializeLocalRendererWithPreviewRoom()
                                 localVideoTrack?.addRenderer(renderer)
                             }
                         },
@@ -313,7 +329,6 @@ class MainActivity : ComponentActivity() {
                     AndroidView(
                         factory = { ctx ->
                             TextureViewRenderer(ctx).also { renderer ->
-                                renderer.init(eglBase!!.eglBaseContext, null)
                                 renderer.setEnableHardwareScaler(true)
                                 remoteRenderer = renderer
                                 remoteVideoTrack?.addRenderer(renderer)
@@ -471,10 +486,10 @@ class MainActivity : ComponentActivity() {
                                         publishCamera = true,
                                         publishMicrophone = false,
                                         onLocalStream = { stream ->
-                                            attachLocalVideo(stream.videoTrack)
+                                            attachLocalVideo(stream)
                                         },
                                         onRemoteStream = { stream ->
-                                            attachRemoteVideo(stream.videoTrack)
+                                            attachRemoteVideo(stream)
                                         }
                                     ),
                                 )

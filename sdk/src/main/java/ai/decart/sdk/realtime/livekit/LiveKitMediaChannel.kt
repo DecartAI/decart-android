@@ -81,6 +81,7 @@ internal class LiveKitMediaChannel(
             videoTrack = videoTrack,
             audioTrack = audioTrack,
             id = RealtimeMediaStream.LOCAL_STREAM_ID,
+            room = room,
         )
     }
 
@@ -106,6 +107,7 @@ internal class LiveKitMediaChannel(
             videoTrack = remoteVideoTrack,
             audioTrack = remoteAudioTrack,
             id = RealtimeMediaStream.REMOTE_STREAM_ID,
+            room = room,
         )
 
     fun disconnect() {
