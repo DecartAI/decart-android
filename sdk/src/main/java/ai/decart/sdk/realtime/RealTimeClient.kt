@@ -16,15 +16,38 @@ data class RealTimeClientConfig(
 )
 
 /**
+ * Output resolution for a realtime session. Defaults to 720p server-side when unset.
+ */
+enum class Resolution(val value: String) {
+    P720("720p"),
+    P1080("1080p"),
+}
+
+/**
  * Options for connecting to a realtime model.
  */
-data class ConnectOptions(
+data class ConnectOptions @JvmOverloads constructor(
     val model: RealtimeModel,
     val onRemoteVideoTrack: (VideoTrack) -> Unit,
     val onRemoteAudioTrack: ((AudioTrack) -> Unit)? = null,
     val initialPrompt: InitialPrompt? = null,
-    val initialImage: String? = null
+    val initialImage: String? = null,
+    val resolution: Resolution? = null,
 )
+
+internal fun buildWebrtcUrl(
+    baseUrl: String,
+    model: RealtimeModel,
+    apiKey: String,
+    resolution: Resolution?,
+): String {
+    val encodedKey = java.net.URLEncoder.encode(apiKey, "UTF-8")
+    val encodedName = java.net.URLEncoder.encode(model.name, "UTF-8")
+    val resolutionQs = resolution?.let {
+        "&resolution=${java.net.URLEncoder.encode(it.value, "UTF-8")}"
+    } ?: ""
+    return "$baseUrl${model.urlPath}?api_key=$encodedKey&model=$encodedName$resolutionQs"
+}
 
 /**
  * Holder for a camera-driven [VideoTrack] produced by [RealTimeClient.createCameraVideoTrack].
@@ -149,9 +172,12 @@ class RealTimeClient(
         val factory = peerConnectionFactory!!
 
         // Build WebSocket URL
-        val url = "${config.baseUrl}${options.model.urlPath}?api_key=${
-            java.net.URLEncoder.encode(config.apiKey, "UTF-8")
-        }&model=${java.net.URLEncoder.encode(options.model.name, "UTF-8")}"
+        val url = buildWebrtcUrl(
+            baseUrl = config.baseUrl,
+            model = options.model,
+            apiKey = config.apiKey,
+            resolution = options.resolution,
+        )
 
         val manager = WebRTCManager(WebRTCConfig(
             webrtcUrl = url,

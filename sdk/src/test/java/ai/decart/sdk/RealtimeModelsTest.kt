@@ -49,4 +49,11 @@ class RealtimeModelsTest {
             assertTrue("${model.name} fps should be > 0", model.fps > 0)
         }
     }
+
+    @Test
+    fun `all realtime models capture at 30 fps`() {
+        RealtimeModels.all.forEach { model ->
+            assertEquals("${model.name} fps should be 30", 30, model.fps)
+        }
+    }
 }
