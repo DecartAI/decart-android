@@ -18,6 +18,7 @@ import io.livekit.android.room.participant.RemoteParticipant
 import io.livekit.android.room.track.AudioTrack
 import io.livekit.android.room.track.LocalAudioTrack
 import io.livekit.android.room.track.LocalVideoTrack
+import io.livekit.android.room.track.RemoteTrackPublication
 import io.livekit.android.room.track.Track
 import io.livekit.android.room.track.VideoTrack
 import kotlinx.coroutines.Job
@@ -59,6 +60,10 @@ internal class LiveKitMediaChannel(
         remoteVideoTrack = null
         remoteAudioTrack = null
         nextRoom.connect(roomInfo.liveKitUrl, roomInfo.token, connectOptions)
+        logger.info(
+            "Connected to LiveKit room",
+            mapOf("remoteParticipants" to nextRoom.remoteParticipants.size),
+        )
         emitExistingRemoteTracks(nextRoom)
     }
 
@@ -147,15 +152,39 @@ internal class LiveKitMediaChannel(
         roomEventsJob = scope.launch {
             room.events.collect { event ->
                 when (event) {
-                    is RoomEvent.Connected -> _connectionStateUpdates.tryEmit(ConnectionState.CONNECTED)
+                    is RoomEvent.Connected -> {
+                        logger.info(
+                            "LiveKit room connected",
+                            mapOf("remoteParticipants" to room.remoteParticipants.size),
+                        )
+                        _connectionStateUpdates.tryEmit(ConnectionState.CONNECTED)
+                    }
                     is RoomEvent.Reconnecting -> _connectionStateUpdates.tryEmit(ConnectionState.RECONNECTING)
                     is RoomEvent.Reconnected -> _connectionStateUpdates.tryEmit(ConnectionState.CONNECTED)
                     is RoomEvent.Disconnected -> {
                         _connectionStateUpdates.tryEmit(ConnectionState.DISCONNECTED)
                         _disconnectUpdates.tryEmit(DisconnectInfo(event.error?.message ?: event.reason.name))
                     }
+                    is RoomEvent.ParticipantConnected -> {
+                        logger.info(
+                            "LiveKit participant connected",
+                            mapOf("identity" to event.participant.identity?.value),
+                        )
+                        emitExistingRemoteTracks(room)
+                    }
                     is RoomEvent.TrackSubscribed -> handleTrackSubscribed(event)
-                    is RoomEvent.TrackPublished -> emitExistingRemoteTracks(room)
+                    is RoomEvent.TrackPublished -> {
+                        logger.info(
+                            "LiveKit track published",
+                            mapOf(
+                                "identity" to event.participant.identity?.value,
+                                "publicationType" to event.publication::class.java.simpleName,
+                                "trackType" to event.publication.track?.let { it::class.java.simpleName },
+                            ),
+                        )
+                        (event.publication as? RemoteTrackPublication)?.setSubscribed(true)
+                        emitExistingRemoteTracks(room)
+                    }
                     else -> Unit
                 }
             }
@@ -182,6 +211,7 @@ internal class LiveKitMediaChannel(
     private fun emitExistingRemoteTracks(room: Room) {
         room.remoteParticipants.values.forEach { participant ->
             participant.trackPublications.values.forEach { publication ->
+                (publication as? RemoteTrackPublication)?.setSubscribed(true)
                 publication.track?.let { track -> handleRemoteTrack(participant, track) }
             }
         }
