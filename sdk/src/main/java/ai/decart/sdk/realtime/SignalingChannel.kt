@@ -33,6 +33,7 @@ internal class SignalingChannel(
 
     private var webSocket: WebSocket? = null
     private var openDeferred: CompletableDeferred<Unit>? = null
+    private var roomInfoDeferred: CompletableDeferred<LiveKitRoomInfoMessage>? = null
 
     private val _promptAckFlow = MutableSharedFlow<PromptAckMessage>(extraBufferCapacity = 10)
     private val _setImageAckFlow = MutableSharedFlow<SetImageAckMessage>(extraBufferCapacity = 10)
@@ -63,10 +64,17 @@ internal class SignalingChannel(
     }
 
     suspend fun sendLiveKitJoin(timeoutMs: Long): LiveKitRoomInfoMessage {
+        val deferred = CompletableDeferred<LiveKitRoomInfoMessage>()
+        roomInfoDeferred = deferred
         if (!send(LiveKitJoinMessage)) {
+            roomInfoDeferred = null
             throw IllegalStateException("WebSocket is not open")
         }
-        return withTimeout(timeoutMs) { roomInfoFlow.first() }
+        return try {
+            withTimeout(timeoutMs) { deferred.await() }
+        } finally {
+            roomInfoDeferred = null
+        }
     }
 
     suspend fun sendInitialPrompt(prompt: InitialPrompt, timeoutMs: Long) {
@@ -103,6 +111,7 @@ internal class SignalingChannel(
 
     fun cleanup() {
         openDeferred = null
+        roomInfoDeferred = null
         webSocket = null
         scope.cancel()
         client.dispatcher.executorService.shutdown()
@@ -149,7 +158,11 @@ internal class SignalingChannel(
 
     private fun handleMessage(message: ServerMessage) {
         when (message) {
-            is ErrorMessage -> onError(Exception(message.error), "server")
+            is ErrorMessage -> {
+                val error = Exception(message.error)
+                roomInfoDeferred?.completeExceptionally(error)
+                onError(error, "server")
+            }
             is SetImageAckMessage -> _setImageAckFlow.tryEmit(message)
             is PromptAckMessage -> _promptAckFlow.tryEmit(message)
             is GenerationStartedMessage -> onStateChange(ConnectionState.GENERATING)
@@ -159,6 +172,7 @@ internal class SignalingChannel(
             is LiveKitRoomInfoMessage -> {
                 _sessionIdFlow.tryEmit(message.sessionId)
                 _roomInfoFlow.tryEmit(message)
+                roomInfoDeferred?.complete(message)
             }
             is StatusMessage -> _statusFlow.tryEmit(message)
             is QueuePositionMessage -> _queuePositionFlow.tryEmit(message)
@@ -188,6 +202,7 @@ internal class SignalingChannel(
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
             val error = if (t is Exception) t else Exception(t)
             openDeferred?.completeExceptionally(error)
+            roomInfoDeferred?.completeExceptionally(error)
             onError(error, "websocket")
         }
 

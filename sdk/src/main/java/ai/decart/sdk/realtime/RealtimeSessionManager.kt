@@ -1,7 +1,6 @@
 package ai.decart.sdk.realtime
 
 import ai.decart.sdk.ConnectionState
-import ai.decart.sdk.ErrorClassifier
 import ai.decart.sdk.Logger
 import ai.decart.sdk.NoopLogger
 import ai.decart.sdk.RealtimeModel
@@ -52,55 +51,66 @@ internal class RealtimeSessionManager(
         val signaling = SignalingChannel(
             logger = logger,
             onStateChange = ::emitState,
-            onError = { error, source ->
+            onError = { error, _ ->
                 config.onError(error)
-                ErrorClassifier.classifyWebrtcError(error, source)
+                emitState(ConnectionState.DISCONNECTED)
             },
         )
         signalingChannel = signaling
 
         val totalStart = System.nanoTime()
-        val wsStart = System.nanoTime()
-        signaling.connect(config.signalingUrl, config.realtimeConfiguration.connection.connectionTimeoutMs)
-        emitPhase(ConnectionPhase.WEBSOCKET, wsStart, success = true)
-        listenToSignaling(signaling)
+        try {
+            val wsStart = System.nanoTime()
+            signaling.connect(config.signalingUrl, config.realtimeConfiguration.connection.connectionTimeoutMs)
+            emitPhase(ConnectionPhase.WEBSOCKET, wsStart, success = true)
+            listenToSignaling(signaling)
 
-        val roomInfo = signaling.sendLiveKitJoin(config.realtimeConfiguration.connection.connectionTimeoutMs)
-        config.onSessionId(roomInfo.sessionId)
+            val roomInfo = signaling.sendLiveKitJoin(config.realtimeConfiguration.connection.connectionTimeoutMs)
+            config.onSessionId(roomInfo.sessionId)
 
-        val media = LiveKitMediaChannel(
-            context = config.context,
-            connectOptions = config.realtimeConfiguration.connection.connectOptions(),
-            roomOptions = config.realtimeConfiguration.roomOptions(),
-            videoConfig = config.realtimeConfiguration.media.video,
-        )
-        mediaChannel = media
-        listenToMedia(media)
-
-        val connectStart = System.nanoTime()
-        media.connect(roomInfo)
-        emitPhase(ConnectionPhase.LIVEKIT_CONNECT, connectStart, success = true)
-
-        sendInitialState(signaling)
-
-        if (config.publishCamera) {
-            val publishStart = System.nanoTime()
-            val localStream = media.createCameraStream(
-                width = config.model.width,
-                height = config.model.height,
-                facing = config.facing,
-                includeMicrophone = config.publishMicrophone,
+            val media = LiveKitMediaChannel(
+                context = config.context,
+                connectOptions = config.realtimeConfiguration.connection.connectOptions(),
+                roomOptions = config.realtimeConfiguration.roomOptions(),
+                videoConfig = config.realtimeConfiguration.media.video,
             )
-            config.onLocalStream(localStream)
-            media.publishLocalTracks(localStream)
-            emitPhase(ConnectionPhase.LIVEKIT_PUBLISH, publishStart, success = true)
-        }
+            mediaChannel = media
+            listenToMedia(media)
 
-        emitPhase(ConnectionPhase.TOTAL, totalStart, success = true)
-        if (managerState != ConnectionState.GENERATING) {
-            emitState(ConnectionState.CONNECTED)
+            val connectStart = System.nanoTime()
+            media.connect(roomInfo)
+            emitPhase(ConnectionPhase.LIVEKIT_CONNECT, connectStart, success = true)
+
+            sendInitialState(signaling)
+
+            if (config.publishCamera) {
+                val publishStart = System.nanoTime()
+                val localStream = media.createCameraStream(
+                    width = config.model.width,
+                    height = config.model.height,
+                    facing = config.facing,
+                    includeMicrophone = config.publishMicrophone,
+                )
+                config.onLocalStream(localStream)
+                media.publishLocalTracks(localStream)
+                emitPhase(ConnectionPhase.LIVEKIT_PUBLISH, publishStart, success = true)
+            }
+
+            emitPhase(ConnectionPhase.TOTAL, totalStart, success = true)
+            if (managerState != ConnectionState.GENERATING) {
+                emitState(ConnectionState.CONNECTED)
+            }
+            return media.currentRemoteStream
+        } catch (error: Exception) {
+            emitPhase(ConnectionPhase.TOTAL, totalStart, success = false, error = error.message)
+            emitState(ConnectionState.DISCONNECTED)
+            mediaChannel?.disconnect()
+            mediaChannel?.cleanup()
+            mediaChannel = null
+            signalingChannel?.close()
+            signalingChannel = null
+            throw error
         }
-        return media.currentRemoteStream
     }
 
     fun sendMessage(message: ClientMessage): Boolean =
