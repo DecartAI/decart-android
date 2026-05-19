@@ -166,6 +166,8 @@ class MainActivity : ComponentActivity() {
         localRenderer?.let { renderer -> localVideoTrack?.removeRenderer(renderer) }
         remoteRenderer?.let { renderer -> remoteVideoTrack?.removeRenderer(renderer) }
         stopPreviewCamera()
+        localRenderer?.release()
+        remoteRenderer?.release()
         localVideoTrack = null
         remoteVideoTrack = null
         localRendererRoom = null

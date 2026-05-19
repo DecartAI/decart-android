@@ -118,12 +118,24 @@ internal class LiveKitMediaChannel(
     fun disconnect() {
         val currentRoom = room
         room = null
-        localVideoTrack?.stopCapture()
-        localVideoTrack = null
-        localAudioTrack = null
+        cleanupLocalTracks()
         remoteVideoTrack = null
         remoteAudioTrack = null
         currentRoom?.disconnect()
+    }
+
+    private fun cleanupLocalTracks() {
+        localVideoTrack?.let { track ->
+            try { track.stopCapture() } catch (_: Exception) {}
+            track.stop()
+            track.dispose()
+        }
+        localVideoTrack = null
+        localAudioTrack?.let { track ->
+            track.stop()
+            track.dispose()
+        }
+        localAudioTrack = null
     }
 
     fun cleanup() {
