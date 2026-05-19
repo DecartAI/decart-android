@@ -124,6 +124,23 @@ When you pre-flip the input, render the remote stream **without**
 `setMirror(true)` on the remote `SurfaceViewRenderer` so server-baked overlays
 appear correctly oriented.
 
+### Output resolution
+
+Opt into 1080p output for a realtime session (defaults to 720p server-side):
+
+```kotlin
+import ai.decart.sdk.realtime.Resolution
+
+realtime.connect(
+    localVideoTrack = cameraTrack.track,
+    options = ConnectOptions(
+        model = RealtimeModels.LUCY_2_1,
+        resolution = Resolution.P1080, // default: server-side 720p
+        onRemoteVideoTrack = { /* ... */ },
+    ),
+)
+```
+
 ### Batch Queue Example (Lucy 2 V2V)
 
 ```kotlin
@@ -202,9 +219,9 @@ client.queue.submit(VideoModels.LUCY_RESTYLE_2, restyle)
 
 | Model | Constant | Resolution | FPS |
 |-------|----------|-----------|-----|
-| Lucy 2.1 | `RealtimeModels.LUCY_2_1` | 1088x624 | 20 |
-| Lucy 2.1 VTON | `RealtimeModels.LUCY_2_1_VTON` | 1088x624 | 20 |
-| Lucy Restyle 2 | `RealtimeModels.LUCY_RESTYLE_2` | 1280x704 | 22 |
+| Lucy 2.1 | `RealtimeModels.LUCY_2_1` | 1088x624 | 30 |
+| Lucy 2.1 VTON | `RealtimeModels.LUCY_2_1_VTON` | 1088x624 | 30 |
+| Lucy Restyle 2 | `RealtimeModels.LUCY_RESTYLE_2` | 1280x704 | 30 |
 
 ### Batch Video Models
 
@@ -231,6 +248,7 @@ Typed input helpers:
 | `RealTimeClientConfig` | Client configuration (API key, base URL, logger) |
 | `ConnectOptions` | Connection parameters (model, callbacks, initial prompt) |
 | `InitialPrompt` | Initial prompt with optional enhancement |
+| `Resolution` | Output resolution enum (`P720`, `P1080`) for `ConnectOptions.resolution` |
 | `ConnectionState` | Connection lifecycle enum (`DISCONNECTED`, `CONNECTING`, `CONNECTED`, `GENERATING`, `RECONNECTING`) |
 | `RealtimeModels` | Available AI model definitions |
 | `VideoModels` | Available batch video model definitions |
