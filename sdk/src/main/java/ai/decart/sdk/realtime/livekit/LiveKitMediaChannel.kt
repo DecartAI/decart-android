@@ -1,6 +1,8 @@
 package ai.decart.sdk.realtime.livekit
 
 import ai.decart.sdk.ConnectionState
+import ai.decart.sdk.Logger
+import ai.decart.sdk.NoopLogger
 import ai.decart.sdk.realtime.FacingMode
 import ai.decart.sdk.realtime.LiveKitRoomInfoMessage
 import ai.decart.sdk.realtime.RealtimeConfiguration
@@ -12,6 +14,7 @@ import io.livekit.android.RoomOptions
 import io.livekit.android.events.RoomEvent
 import io.livekit.android.events.collect
 import io.livekit.android.room.Room
+import io.livekit.android.room.participant.RemoteParticipant
 import io.livekit.android.room.track.AudioTrack
 import io.livekit.android.room.track.LocalAudioTrack
 import io.livekit.android.room.track.LocalVideoTrack
@@ -31,6 +34,7 @@ internal class LiveKitMediaChannel(
     private val connectOptions: LiveKitConnectOptions,
     private val roomOptions: RoomOptions,
     private val videoConfig: RealtimeConfiguration.VideoConfig,
+    private val logger: Logger = NoopLogger,
 ) {
     data class DisconnectInfo(val reason: String?)
 
@@ -55,6 +59,7 @@ internal class LiveKitMediaChannel(
         remoteVideoTrack = null
         remoteAudioTrack = null
         nextRoom.connect(roomInfo.liveKitUrl, roomInfo.token, connectOptions)
+        emitExistingRemoteTracks(nextRoom)
     }
 
     fun createCameraStream(
@@ -138,6 +143,7 @@ internal class LiveKitMediaChannel(
                         _disconnectUpdates.tryEmit(DisconnectInfo(event.error?.message ?: event.reason.name))
                     }
                     is RoomEvent.TrackSubscribed -> handleTrackSubscribed(event)
+                    is RoomEvent.TrackPublished -> emitExistingRemoteTracks(room)
                     else -> Unit
                 }
             }
@@ -158,8 +164,31 @@ internal class LiveKitMediaChannel(
     }
 
     private fun handleTrackSubscribed(event: RoomEvent.TrackSubscribed) {
-        if (!shouldAcceptTrack(event.participant.identity?.value)) return
-        when (val track = event.track) {
+        handleRemoteTrack(event.participant, event.track)
+    }
+
+    private fun emitExistingRemoteTracks(room: Room) {
+        room.remoteParticipants.values.forEach { participant ->
+            participant.trackPublications.values.forEach { publication ->
+                publication.track?.let { track -> handleRemoteTrack(participant, track) }
+            }
+        }
+    }
+
+    private fun handleRemoteTrack(participant: RemoteParticipant, track: Track) {
+        val identity = participant.identity?.value
+        if (!shouldAcceptTrack(identity)) {
+            logger.debug(
+                "Ignoring non-inference LiveKit track",
+                mapOf("identity" to identity, "trackType" to track::class.java.simpleName),
+            )
+            return
+        }
+        logger.debug(
+            "Accepting inference LiveKit track",
+            mapOf("identity" to identity, "trackType" to track::class.java.simpleName),
+        )
+        when (track) {
             is VideoTrack -> {
                 remoteVideoTrack = track
                 emitRemoteStreamIfAvailable()

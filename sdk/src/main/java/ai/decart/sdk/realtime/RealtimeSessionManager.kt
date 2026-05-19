@@ -64,6 +64,7 @@ internal class RealtimeSessionManager(
             connectOptions = config.realtimeConfiguration.connection.connectOptions(),
             roomOptions = config.realtimeConfiguration.roomOptions(),
             videoConfig = config.realtimeConfiguration.media.video,
+                logger = logger,
         )
         mediaChannel = media
         listenToMedia(media)
