@@ -59,6 +59,26 @@ internal class RealtimeSessionManager(
         signalingChannel = signaling
 
         val totalStart = System.nanoTime()
+        val media = LiveKitMediaChannel(
+            context = config.context,
+            connectOptions = config.realtimeConfiguration.connection.connectOptions(),
+            roomOptions = config.realtimeConfiguration.roomOptions(),
+            videoConfig = config.realtimeConfiguration.media.video,
+        )
+        mediaChannel = media
+        listenToMedia(media)
+
+        val localStream = if (config.publishCamera) {
+            media.createCameraStream(
+                width = config.model.width,
+                height = config.model.height,
+                facing = config.facing,
+                includeMicrophone = config.publishMicrophone,
+            ).also(config.onLocalStream)
+        } else {
+            null
+        }
+
         try {
             val wsStart = System.nanoTime()
             signaling.connect(config.signalingUrl, config.realtimeConfiguration.connection.connectionTimeoutMs)
@@ -68,30 +88,14 @@ internal class RealtimeSessionManager(
             val roomInfo = signaling.sendLiveKitJoin(config.realtimeConfiguration.connection.connectionTimeoutMs)
             config.onSessionId(roomInfo.sessionId)
 
-            val media = LiveKitMediaChannel(
-                context = config.context,
-                connectOptions = config.realtimeConfiguration.connection.connectOptions(),
-                roomOptions = config.realtimeConfiguration.roomOptions(),
-                videoConfig = config.realtimeConfiguration.media.video,
-            )
-            mediaChannel = media
-            listenToMedia(media)
-
             val connectStart = System.nanoTime()
             media.connect(roomInfo)
             emitPhase(ConnectionPhase.LIVEKIT_CONNECT, connectStart, success = true)
 
             sendInitialState(signaling)
 
-            if (config.publishCamera) {
+            if (localStream != null) {
                 val publishStart = System.nanoTime()
-                val localStream = media.createCameraStream(
-                    width = config.model.width,
-                    height = config.model.height,
-                    facing = config.facing,
-                    includeMicrophone = config.publishMicrophone,
-                )
-                config.onLocalStream(localStream)
                 media.publishLocalTracks(localStream)
                 emitPhase(ConnectionPhase.LIVEKIT_PUBLISH, publishStart, success = true)
             }

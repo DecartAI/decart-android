@@ -17,6 +17,7 @@ import io.livekit.android.room.track.LocalAudioTrack
 import io.livekit.android.room.track.LocalVideoTrack
 import io.livekit.android.room.track.Track
 import io.livekit.android.room.track.VideoTrack
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -35,6 +36,7 @@ internal class LiveKitMediaChannel(
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var room: Room? = null
+    private var roomEventsJob: Job? = null
     private var localVideoTrack: LocalVideoTrack? = null
     private var localAudioTrack: LocalAudioTrack? = null
     private var remoteVideoTrack: VideoTrack? = null
@@ -49,14 +51,9 @@ internal class LiveKitMediaChannel(
     val disconnectUpdates: SharedFlow<DisconnectInfo> = _disconnectUpdates
 
     suspend fun connect(roomInfo: LiveKitRoomInfoMessage) {
-        val nextRoom = LiveKit.create(
-            appContext = context.applicationContext,
-            options = roomOptions,
-        )
-        room = nextRoom
+        val nextRoom = ensureRoom()
         remoteVideoTrack = null
         remoteAudioTrack = null
-        listenToRoomEvents(nextRoom)
         nextRoom.connect(roomInfo.liveKitUrl, roomInfo.token, connectOptions)
     }
 
@@ -66,11 +63,12 @@ internal class LiveKitMediaChannel(
         facing: FacingMode,
         includeMicrophone: Boolean,
     ): RealtimeMediaStream {
-        val participant = requireNotNull(room?.localParticipant) { "LiveKit room is not connected" }
+        val participant = ensureRoom().localParticipant
         val videoTrack = participant.createVideoTrack(
             name = "local_video",
             options = videoConfig.captureOptions(width = width, height = height, facing = facing),
         )
+        videoTrack.startCapture()
         localVideoTrack = videoTrack
 
         val audioTrack = if (includeMicrophone) {
@@ -89,7 +87,6 @@ internal class LiveKitMediaChannel(
     suspend fun publishLocalTracks(stream: RealtimeMediaStream) {
         val participant = requireNotNull(room?.localParticipant) { "LiveKit room is not connected" }
         (stream.videoTrack as? LocalVideoTrack)?.let { track ->
-            track.startCapture()
             val published = participant.publishVideoTrack(track, videoConfig.publishOptions())
             if (!published) {
                 track.stopCapture()
@@ -127,7 +124,8 @@ internal class LiveKitMediaChannel(
     }
 
     private fun listenToRoomEvents(room: Room) {
-        scope.launch {
+        if (roomEventsJob != null) return
+        roomEventsJob = scope.launch {
             room.events.collect { event ->
                 when (event) {
                     is RoomEvent.Connected -> _connectionStateUpdates.tryEmit(ConnectionState.CONNECTED)
@@ -142,6 +140,19 @@ internal class LiveKitMediaChannel(
                 }
             }
         }
+    }
+
+    private fun ensureRoom(): Room {
+        val existingRoom = room
+        if (existingRoom != null) return existingRoom
+
+        val newRoom = LiveKit.create(
+            appContext = context.applicationContext,
+            options = roomOptions,
+        )
+        room = newRoom
+        listenToRoomEvents(newRoom)
+        return newRoom
     }
 
     private fun handleTrackSubscribed(event: RoomEvent.TrackSubscribed) {
