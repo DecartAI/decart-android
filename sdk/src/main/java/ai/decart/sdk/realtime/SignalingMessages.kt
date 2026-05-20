@@ -80,9 +80,13 @@ data class StatusMessage(val status: String) : ServerMessage
 
 @Serializable
 data class QueuePositionMessage(
-    @SerialName("queue_position") val queuePosition: Int? = null,
+    val position: Int? = null,
+    @SerialName("queue_position") val legacyQueuePosition: Int? = null,
     @SerialName("queue_size") val queueSize: Int? = null
-) : ServerMessage
+) : ServerMessage {
+    val queuePosition: Int?
+        get() = position ?: legacyQueuePosition
+}
 
 // Client-only messages
 

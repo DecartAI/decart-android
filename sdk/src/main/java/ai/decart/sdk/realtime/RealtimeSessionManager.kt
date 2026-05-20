@@ -223,6 +223,11 @@ internal class RealtimeSessionManager(
             logger = logger,
             onStateChange = ::emitState,
             onError = ::handleSignalingError,
+            onClosed = { code, reason ->
+                handleConnectionLoss(
+                    ConnectionLossCause(source = "signaling", reason = reason, code = code),
+                )
+            },
         )
         signalingChannel = signaling
 
@@ -263,13 +268,6 @@ internal class RealtimeSessionManager(
             throw StaleAttemptException()
         }
 
-        config.onSessionStarted(
-            SessionStarted(
-                sessionId = roomInfo.sessionId,
-                subscribeToken = encodeSubscribeToken(roomInfo.roomName),
-            ),
-        )
-
         // Initial-state ack and LiveKit room connect run in parallel,
         // gated by waitForReadiness before publishing local tracks.
         val initialStateAckDeferred = scope.async { sendInitialState(signaling, initialState) }
@@ -306,6 +304,12 @@ internal class RealtimeSessionManager(
             emitState(ConnectionState.CONNECTED)
         }
         hasEstablishedSession = true
+        config.onSessionStarted(
+            SessionStarted(
+                sessionId = roomInfo.sessionId,
+                subscribeToken = encodeSubscribeToken(roomInfo.roomName),
+            ),
+        )
         return media.currentRemoteStream
     }
 
@@ -484,6 +488,8 @@ internal class RealtimeSessionManager(
         val attemptCycle = ++currentAttempt
         reconnectJob = scope.launch {
             try {
+                tearDownTransports()
+                resetLocalStreamForFreshLiveKitRoom()
                 runWithRetry(attemptCycle) { attempt -> runOneConnect(attempt) }
                 logger.debug("realtime reconnect: succeeded")
             } catch (_: StaleAttemptException) {
@@ -513,7 +519,6 @@ internal class RealtimeSessionManager(
     }
 
     private fun resetLocalStreamForFreshLiveKitRoom() {
-        providedLocalStream = null
         disposeSdkOwnedLocalStream()
     }
 

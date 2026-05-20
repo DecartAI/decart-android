@@ -27,6 +27,7 @@ internal class SignalingChannel(
     private val logger: Logger = NoopLogger,
     private val onStateChange: (ConnectionState) -> Unit,
     private val onError: (Exception, String?) -> Unit,
+    private val onClosed: (Int, String) -> Unit,
 ) {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val client = OkHttpClient.Builder()
@@ -37,6 +38,7 @@ internal class SignalingChannel(
     private var openDeferred: CompletableDeferred<Unit>? = null
     private var roomInfoDeferred: CompletableDeferred<LiveKitRoomInfoMessage>? = null
     private var roomInfoTimeoutJob: Job? = null
+    private var closing: Boolean = false
 
     private val _promptAckFlow = MutableSharedFlow<PromptAckMessage>(extraBufferCapacity = 10)
     private val _setImageAckFlow = MutableSharedFlow<SetImageAckMessage>(extraBufferCapacity = 10)
@@ -79,6 +81,7 @@ internal class SignalingChannel(
         val wsUrl = url.withUserAgent()
         val deferred = CompletableDeferred<Unit>()
         openDeferred = deferred
+        closing = false
         val request = Request.Builder().url(wsUrl).build()
         webSocket = client.newWebSocket(request, listener)
         withTimeout(timeoutMs) { deferred.await() }
@@ -168,6 +171,7 @@ internal class SignalingChannel(
 
     fun close() {
         val closeError = Exception("Control channel closed")
+        closing = true
         webSocket?.close(1000, "client disconnect")
         resolvePendingWaits(closeError)
         roomInfoDeferred?.completeExceptionally(closeError)
@@ -269,6 +273,9 @@ internal class SignalingChannel(
             roomInfoDeferred?.completeExceptionally(error)
             roomInfoTimeoutJob?.cancel()
             resolvePendingWaits(error)
+            if (!closing) {
+                onClosed(code, reason)
+            }
         }
     }
 

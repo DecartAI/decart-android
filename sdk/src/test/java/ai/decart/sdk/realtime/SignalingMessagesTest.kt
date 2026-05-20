@@ -125,9 +125,19 @@ class SignalingMessagesTest {
 
     @Test
     fun `parse queue position message`() {
+        val json = """{"type":"queue_position","position":2,"queue_size":5}"""
+        val msg = SignalingMessageParser.parse(json) as QueuePositionMessage
+        assertEquals(2, msg.queuePosition)
+        assertEquals(2, msg.position)
+        assertEquals(5, msg.queueSize)
+    }
+
+    @Test
+    fun `parse legacy queue position message`() {
         val json = """{"type":"queue_position","queue_position":2,"queue_size":5}"""
         val msg = SignalingMessageParser.parse(json) as QueuePositionMessage
         assertEquals(2, msg.queuePosition)
+        assertEquals(2, msg.legacyQueuePosition)
         assertEquals(5, msg.queueSize)
     }
 
