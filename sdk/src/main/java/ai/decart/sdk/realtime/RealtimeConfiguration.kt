@@ -28,8 +28,8 @@ data class RealtimeConfiguration(
     data class VideoConfig(
         val maxBitrate: Int = 3_500_000,
         val maxFramerate: Int = 30,
-        val preferredCodec: String = VideoCodec.H264.codecName,
-        val simulcast: Boolean = true,
+        val preferredCodec: String = VideoCodec.VP8.codecName,
+        val simulcast: Boolean = false,
     ) {
         internal fun captureOptions(
             width: Int,
