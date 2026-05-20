@@ -345,11 +345,13 @@ class MainActivity : ComponentActivity() {
                 )
                 if (isConnected && prompt.isNotBlank()) {
                     Button(onClick = {
-                        try {
-                            client?.setPrompt(prompt, enhancePrompt)
-                            statusMessage = "Prompt sent"
-                        } catch (e: Exception) {
-                            statusMessage = "Error: ${e.message}"
+                        coroutineScope.launch {
+                            try {
+                                client?.setPrompt(prompt, enhancePrompt)
+                                statusMessage = "Prompt sent"
+                            } catch (e: Exception) {
+                                statusMessage = "Error: ${e.message}"
+                            }
                         }
                     }) {
                         Text("Send")

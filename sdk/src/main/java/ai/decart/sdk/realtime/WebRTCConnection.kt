@@ -15,6 +15,7 @@ private val ICE_SERVERS = listOf(
     PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
 )
 private const val AVATAR_SETUP_TIMEOUT_MS = 30_000L
+private const val PROMPT_TIMEOUT_MS = 15_000L
 
 data class InitialPrompt(val text: String, val enhance: Boolean = true)
 
@@ -68,6 +69,28 @@ class WebRTCConnection(private val callbacks: ConnectionCallbacks = ConnectionCa
     val setImageAckFlow: SharedFlow<SetImageAckMessage> = _setImageAckFlow
     val sessionIdFlow: SharedFlow<SessionIdMessage> = _sessionIdFlow
     val generationTickFlow: SharedFlow<GenerationTickMessage> = _generationTickFlow
+
+    // Fail callbacks from in-flight ack waiters. Invoked synchronously from
+    // websocket failure / server error / cleanup paths so callers don't hang
+    // when the scope's children are cancelled in the same call.
+    private val pendingFailHooks = mutableSetOf<(Throwable) -> Unit>()
+
+    private fun registerFailHook(hook: (Throwable) -> Unit) {
+        synchronized(pendingFailHooks) { pendingFailHooks.add(hook) }
+    }
+
+    private fun unregisterFailHook(hook: (Throwable) -> Unit) {
+        synchronized(pendingFailHooks) { pendingFailHooks.remove(hook) }
+    }
+
+    private fun resolvePendingWaits(error: Exception) {
+        val hooks: List<(Throwable) -> Unit>
+        synchronized(pendingFailHooks) {
+            hooks = pendingFailHooks.toList()
+            pendingFailHooks.clear()
+        }
+        for (hook in hooks) hook(error)
+    }
 
     private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
@@ -235,17 +258,20 @@ class WebRTCConnection(private val callbacks: ConnectionCallbacks = ConnectionCa
                         cont.resumeWith(Result.failure(error))
                     }
                     connectionReject?.invoke(error)
+                    resolvePendingWaits(error)
                 }
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                     setState(ConnectionState.DISCONNECTED)
                     timeoutJob.cancel()
+                    val closeError = Exception("WebSocket closed")
                     if (cont.isActive) {
                         cont.resumeWith(
                             Result.failure(Exception("WebSocket closed before connection was established"))
                         )
                     }
-                    connectionReject?.invoke(Exception("WebSocket closed"))
+                    connectionReject?.invoke(closeError)
+                    resolvePendingWaits(closeError)
                 }
             })
 
@@ -307,6 +333,7 @@ class WebRTCConnection(private val callbacks: ConnectionCallbacks = ConnectionCa
                     callbacks.onError?.invoke(error)
                     connectionReject?.invoke(error)
                     connectionReject = null
+                    resolvePendingWaits(error)
                 }
                 is SetImageAckMessage -> {
                     _setImageAckFlow.tryEmit(msg)
@@ -473,96 +500,62 @@ class WebRTCConnection(private val callbacks: ConnectionCallbacks = ConnectionCa
     suspend fun setImageBase64(
         imageBase64: String?,
         options: SetImageOptions = SetImageOptions()
-    ) = suspendCancellableCoroutine { cont ->
-        val timeoutJob = coroutineScope.launch {
-            delay(options.timeout)
-            if (cont.isActive) {
-                cont.resumeWith(Result.failure(Exception("Image send timed out")))
-            }
-        }
-
-        val listenerJob = coroutineScope.launch {
-            _setImageAckFlow.first().let { msg ->
-                timeoutJob.cancel()
-                if (cont.isActive) {
-                    if (msg.success) {
-                        cont.resumeWith(Result.success(Unit))
-                    } else {
-                        cont.resumeWith(Result.failure(Exception(msg.error ?: "Failed to send image")))
-                    }
-                }
-            }
-        }
-
+    ) {
         val message = SetImageMessage(
             imageData = imageBase64,
             prompt = if (options.prompt != null || imageBase64 == null) options.prompt else null,
             enhancePrompt = options.enhance
         )
-
-        if (!send(message)) {
-            timeoutJob.cancel()
-            listenerJob.cancel()
-            if (cont.isActive) {
-                cont.resumeWith(Result.failure(Exception("WebSocket is not open")))
-            }
-        }
-
-        cont.invokeOnCancellation {
-            timeoutJob.cancel()
-            listenerJob.cancel()
-        }
+        awaitAck(
+            scope = coroutineScope,
+            timeoutMs = options.timeout,
+            timeoutMessage = "Image send timed out",
+            ackFailureMessage = "Failed to send image",
+            register = ::registerFailHook,
+            unregister = ::unregisterFailHook,
+            awaitMatchingAck = {
+                val ack = _setImageAckFlow.first()
+                AckResult(success = ack.success, error = ack.error)
+            },
+            send = { send(message) }
+        )
     }
 
-    /**
-     * Send a prompt message during an active session. Does not wait for an
-     * acknowledgement — fire-and-forget.
-     */
-    fun sendPromptMessage(prompt: String, enhance: Boolean) {
-        send(PromptMessage(prompt = prompt, enhancePrompt = enhance))
+    suspend fun sendPromptAndAwaitAck(
+        prompt: String,
+        enhance: Boolean,
+        timeoutMs: Long = PROMPT_TIMEOUT_MS,
+    ) {
+        awaitAck(
+            scope = coroutineScope,
+            timeoutMs = timeoutMs,
+            timeoutMessage = "Prompt send timed out",
+            ackFailureMessage = "Failed to send prompt",
+            register = ::registerFailHook,
+            unregister = ::unregisterFailHook,
+            awaitMatchingAck = {
+                val ack = _promptAckFlow.first { it.prompt == prompt }
+                AckResult(success = ack.success, error = ack.error)
+            },
+            send = { send(PromptMessage(prompt = prompt, enhancePrompt = enhance)) }
+        )
     }
 
-    /**
-     * Send the initial prompt before the WebRTC handshake and suspend until
-     * the server acknowledges it.
-     */
-    private suspend fun sendInitialPrompt(prompt: InitialPrompt) =
-        suspendCancellableCoroutine { cont ->
-            val timeoutJob = coroutineScope.launch {
-                delay(AVATAR_SETUP_TIMEOUT_MS)
-                if (cont.isActive) {
-                    cont.resumeWith(Result.failure(Exception("Prompt send timed out")))
-                }
-            }
-
-            val listenerJob = coroutineScope.launch {
-                _promptAckFlow.first { it.prompt == prompt.text }.let { msg ->
-                    timeoutJob.cancel()
-                    if (cont.isActive) {
-                        if (msg.success) {
-                            cont.resumeWith(Result.success(Unit))
-                        } else {
-                            cont.resumeWith(
-                                Result.failure(Exception(msg.error ?: "Failed to send prompt"))
-                            )
-                        }
-                    }
-                }
-            }
-
-            if (!send(PromptMessage(prompt = prompt.text, enhancePrompt = prompt.enhance))) {
-                timeoutJob.cancel()
-                listenerJob.cancel()
-                if (cont.isActive) {
-                    cont.resumeWith(Result.failure(Exception("WebSocket is not open")))
-                }
-            }
-
-            cont.invokeOnCancellation {
-                timeoutJob.cancel()
-                listenerJob.cancel()
-            }
-        }
+    private suspend fun sendInitialPrompt(prompt: InitialPrompt) {
+        awaitAck(
+            scope = coroutineScope,
+            timeoutMs = AVATAR_SETUP_TIMEOUT_MS,
+            timeoutMessage = "Prompt send timed out",
+            ackFailureMessage = "Failed to send prompt",
+            register = ::registerFailHook,
+            unregister = ::unregisterFailHook,
+            awaitMatchingAck = {
+                val ack = _promptAckFlow.first { it.prompt == prompt.text }
+                AckResult(success = ack.success, error = ack.error)
+            },
+            send = { send(PromptMessage(prompt = prompt.text, enhancePrompt = prompt.enhance)) }
+        )
+    }
 
     // ── State management ───────────────────────────────────────────────
 
@@ -793,6 +786,7 @@ class WebRTCConnection(private val callbacks: ConnectionCallbacks = ConnectionCa
      * stopped — they belong to the caller, not the SDK.
      */
     fun cleanup() {
+        resolvePendingWaits(Exception("WebSocket closed"))
         pc?.close()
         pc = null
         ws?.close(1000, "cleanup")

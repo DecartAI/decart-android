@@ -71,8 +71,12 @@ realtime.connect(
     )
 )
 
-// 3. Change prompt during session
-realtime.setPrompt("a sunny beach scene", enhance = true)
+// 3. Change prompt during session (suspends until the server acks)
+try {
+    realtime.setPrompt("a sunny beach scene", enhance = true)
+} catch (e: Exception) {
+    // ack failure, timeout, or websocket disconnect
+}
 
 // 4. Disconnect when done
 realtime.disconnect()
@@ -270,8 +274,8 @@ Typed input helpers:
 | `createCameraVideoTrack(facing, mirror, width, height, fps, trackId)` | One-line camera setup, optional pre-flip via `MirrorVideoProcessor` |
 | `connect(videoTrack, audioTrack, options)` | Connect to a model |
 | `disconnect()` | End the current session |
-| `setPrompt(prompt, enhance)` | Update the prompt |
-| `setImage(imageBase64, prompt, enhance, timeout)` | Set a reference image |
+| `setPrompt(prompt, enhance, timeoutMs)` | **suspend** — update the prompt; throws on ack failure, timeout (default 15s), or disconnect |
+| `setImage(imageBase64, prompt, enhance, timeout)` | **suspend** — set a reference image; throws on ack failure, timeout (default 30s), or disconnect |
 | `release()` | Release all resources |
 
 **Observable State:**
