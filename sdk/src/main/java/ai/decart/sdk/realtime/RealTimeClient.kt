@@ -22,7 +22,7 @@ import kotlinx.coroutines.flow.update
 
 data class RealTimeClientConfig(
     val apiKey: String,
-    val baseUrl: String = "wss://api.stage-decart.com",
+    val baseUrl: String = "wss://api.decart.ai",
     val logger: Logger = NoopLogger,
 )
 
