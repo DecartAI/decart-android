@@ -366,6 +366,16 @@ class WebRTCManager(private val config: WebRTCConfig) {
     ) {
         connection.setImageBase64(imageBase64, options)
     }
+
+    // ── Prompt ──────────────────────────────────────────────────────────
+
+    suspend fun setPrompt(
+        prompt: String,
+        enhance: Boolean = true,
+        timeoutMs: Long = 15_000L,
+    ) {
+        connection.sendPromptAndAwaitAck(prompt = prompt, enhance = enhance, timeoutMs = timeoutMs)
+    }
 }
 
 /**

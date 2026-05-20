@@ -83,8 +83,8 @@ class CameraVideoTrack internal constructor(
  *     onRemoteVideoTrack = { track -> renderer.addSink(track) }
  * ))
  *
- * // Change the prompt during a session
- * client.setPrompt("a cyberpunk cityscape")
+ * // Change the prompt during a session (suspend)
+ * scope.launch { client.setPrompt("a cyberpunk cityscape") }
  *
  * // Observe state changes
  * client.connectionState.collect { state -> ... }
@@ -237,26 +237,20 @@ class RealTimeClient(
     }
 
     /**
-     * Send a prompt to change the generation style.
-     * The connection must be in CONNECTED or GENERATING state.
-     *
-     * @param prompt The text prompt
-     * @param enhance Whether to enhance the prompt (default true)
+     * Update the prompt and suspend until the server acks. Throws on ack
+     * failure, timeout, send failure, or websocket disconnect.
      */
-    fun setPrompt(prompt: String, enhance: Boolean = true) {
+    suspend fun setPrompt(
+        prompt: String,
+        enhance: Boolean = true,
+        timeoutMs: Long = 15_000L,
+    ) {
         val manager = webrtcManager ?: throw IllegalStateException("Not connected")
         val state = manager.getConnectionState()
         if (state != ConnectionState.CONNECTED && state != ConnectionState.GENERATING) {
             throw IllegalStateException("Cannot send message: connection is $state")
         }
-
-        val sent = manager.sendMessage(PromptMessage(
-            prompt = prompt,
-            enhancePrompt = enhance
-        ))
-        if (!sent) {
-            throw IllegalStateException("WebSocket is not open")
-        }
+        manager.setPrompt(prompt = prompt, enhance = enhance, timeoutMs = timeoutMs)
     }
 
     /**
