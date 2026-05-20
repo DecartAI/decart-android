@@ -246,8 +246,11 @@ Typed input helpers:
 | `errors` | `SharedFlow<DecartError>` | Error events |
 | `localStreamUpdates` | `SharedFlow<RealtimeMediaStream>` | Local LiveKit stream updates |
 | `remoteStreamUpdates` | `SharedFlow<RealtimeMediaStream>` | Remote LiveKit stream updates |
-| `stats` | `SharedFlow<WebRTCStats>` | Legacy stats flow; LiveKit stats are not surfaced yet |
-| `diagnostics` | `SharedFlow<DiagnosticEvent>` | Connection diagnostic events |
+| `queuePositionUpdates` | `SharedFlow<QueuePositionMessage>` | Queue position updates while waiting for a server slot |
+| `generationEnded` | `SharedFlow<GenerationEndedMessage>` | Generation lifecycle end events |
+| `sessionStarted` | `StateFlow<SessionStarted?>` | `(sessionId, subscribeToken)` once the LiveKit room info arrives |
+| `subscribeToken` | `String?` | Base64 token to hand to viewer / subscribe clients |
+| `diagnostics` | `SharedFlow<DiagnosticEvent>` | Connection diagnostic events (incl. `PublishStats`) |
 
 ### QueueClient
 

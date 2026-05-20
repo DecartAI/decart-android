@@ -1,11 +1,5 @@
 package ai.decart.sdk.realtime
 
-/**
- * Diagnostic event types for connection monitoring.
- * Ported from JS SDK's diagnostics.ts.
- */
-
-/** Connection phase names for timing events. */
 enum class ConnectionPhase {
     WEBSOCKET,
     AVATAR_IMAGE,
@@ -74,23 +68,29 @@ data class ReconnectEvent(
 )
 
 data class VideoStallEvent(
-    /** True when a stall is detected, false when recovered. */
     val stalled: Boolean,
-    /** Duration of the stall in ms (0 when first detected, actual duration on recovery). */
-    val durationMs: Long
+    val durationMs: Long,
 )
 
-/** Emitted exactly once per session when the first remote video frame is decoded. */
+/** Emitted once per session, on the first decoded remote frame. */
 data class FirstFrameEvent(
-    /** Time from the LiveKit room connect to first remote frame, in milliseconds. */
     val timeSinceConnectMs: Double,
-    /** Width of the first decoded frame in pixels, if known. */
     val width: Int? = null,
-    /** Height of the first decoded frame in pixels, if known. */
     val height: Int? = null,
 )
 
-/** A single diagnostic event with its name and typed data. */
+/** Outbound RTP sample. Flat bytesSent/framesEncoded across samples means the encoder isn't producing data. */
+data class PublishStatsEvent(
+    val bytesSent: Long,
+    val deltaBytes: Long,
+    val framesEncoded: Long,
+    val deltaFrames: Long,
+    val frameWidth: Long,
+    val frameHeight: Long,
+    val encoderImplementation: String? = null,
+    val qualityLimitationReason: String? = null,
+)
+
 sealed class DiagnosticEvent {
     data class PhaseTiming(val data: PhaseTimingEvent) : DiagnosticEvent()
     data class IceCandidate(val data: IceCandidateEvent) : DiagnosticEvent()
@@ -101,7 +101,7 @@ sealed class DiagnosticEvent {
     data class Reconnect(val data: ReconnectEvent) : DiagnosticEvent()
     data class VideoStall(val data: VideoStallEvent) : DiagnosticEvent()
     data class FirstFrame(val data: FirstFrameEvent) : DiagnosticEvent()
+    data class PublishStats(val data: PublishStatsEvent) : DiagnosticEvent()
 }
 
-/** Callback type for emitting diagnostic events. */
 typealias DiagnosticEmitter = (DiagnosticEvent) -> Unit

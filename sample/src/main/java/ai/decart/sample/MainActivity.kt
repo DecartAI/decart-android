@@ -367,11 +367,13 @@ class MainActivity : ComponentActivity() {
                 )
                 if (isConnected && prompt.isNotBlank()) {
                     Button(onClick = {
-                        try {
-                            client?.setPrompt(prompt, enhancePrompt)
-                            statusMessage = "Prompt sent"
-                        } catch (e: Exception) {
-                            statusMessage = "Error: ${e.message}"
+                        coroutineScope.launch {
+                            try {
+                                client?.setPrompt(prompt, enhancePrompt)
+                                statusMessage = "Prompt sent"
+                            } catch (e: Exception) {
+                                statusMessage = "Error: ${e.message}"
+                            }
                         }
                     }) {
                         Text("Send")
@@ -437,8 +439,7 @@ class MainActivity : ComponentActivity() {
                             config = RealTimeClientConfig(
                                 apiKey = apiKey,
                                 baseUrl = "wss://api.stage-decart.com",
-                                logger = AndroidLogger(LogLevel.DEBUG),
-                                verboseTransport = true,
+                                logger = AndroidLogger(LogLevel.WARN),
                             ),
                         )
                         client = rtClient

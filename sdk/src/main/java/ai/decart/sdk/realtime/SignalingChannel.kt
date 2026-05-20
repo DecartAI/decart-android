@@ -6,8 +6,10 @@ import ai.decart.sdk.NoopLogger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.first
@@ -34,20 +36,44 @@ internal class SignalingChannel(
     private var webSocket: WebSocket? = null
     private var openDeferred: CompletableDeferred<Unit>? = null
     private var roomInfoDeferred: CompletableDeferred<LiveKitRoomInfoMessage>? = null
+    private var roomInfoTimeoutJob: Job? = null
 
     private val _promptAckFlow = MutableSharedFlow<PromptAckMessage>(extraBufferCapacity = 10)
     private val _setImageAckFlow = MutableSharedFlow<SetImageAckMessage>(extraBufferCapacity = 10)
     private val _roomInfoFlow = MutableSharedFlow<LiveKitRoomInfoMessage>(extraBufferCapacity = 1)
     private val _sessionIdFlow = MutableSharedFlow<String>(extraBufferCapacity = 10)
     private val _generationTickFlow = MutableSharedFlow<GenerationTickMessage>(extraBufferCapacity = 10)
+    private val _generationEndedFlow = MutableSharedFlow<GenerationEndedMessage>(extraBufferCapacity = 10)
     private val _statusFlow = MutableSharedFlow<StatusMessage>(extraBufferCapacity = 10)
     private val _queuePositionFlow = MutableSharedFlow<QueuePositionMessage>(extraBufferCapacity = 10)
 
     val roomInfoFlow: SharedFlow<LiveKitRoomInfoMessage> = _roomInfoFlow
     val sessionIdFlow: SharedFlow<String> = _sessionIdFlow
     val generationTickFlow: SharedFlow<GenerationTickMessage> = _generationTickFlow
+    val generationEndedFlow: SharedFlow<GenerationEndedMessage> = _generationEndedFlow
     val statusFlow: SharedFlow<StatusMessage> = _statusFlow
     val queuePositionFlow: SharedFlow<QueuePositionMessage> = _queuePositionFlow
+
+    // Fail callbacks from in-flight ack waiters. Invoked synchronously from
+    // ws close / server error so callers don't hang waiting on a dead scope.
+    private val pendingFailHooks = mutableSetOf<(Throwable) -> Unit>()
+
+    private fun registerFailHook(hook: (Throwable) -> Unit) {
+        synchronized(pendingFailHooks) { pendingFailHooks.add(hook) }
+    }
+
+    private fun unregisterFailHook(hook: (Throwable) -> Unit) {
+        synchronized(pendingFailHooks) { pendingFailHooks.remove(hook) }
+    }
+
+    private fun resolvePendingWaits(error: Throwable) {
+        val hooks: List<(Throwable) -> Unit>
+        synchronized(pendingFailHooks) {
+            hooks = pendingFailHooks.toList()
+            pendingFailHooks.clear()
+        }
+        for (hook in hooks) hook(error)
+    }
 
     suspend fun connect(url: String, timeoutMs: Long) {
         val wsUrl = url.withUserAgent()
@@ -59,183 +85,141 @@ internal class SignalingChannel(
     }
 
     fun send(message: ClientMessage): Boolean {
-        val socket = webSocket
-        if (socket == null) {
-            logger.warn(
-                "Realtime signaling send while disconnected",
-                mapOf("type" to message::class.java.simpleName),
-            )
-            return false
-        }
-        logger.debug(
-            "Realtime signaling send",
-            mapOf("type" to message::class.java.simpleName),
-        )
+        val socket = webSocket ?: return false
         return socket.send(SignalingMessageParser.serialize(message))
     }
 
+    /**
+     * Sends `livekit_join` and awaits `livekit_room_info`. The timeout is a
+     * cancellable [Job] (not [withTimeout]) so a `queue_position` can pause
+     * it — users in a queue would otherwise time out before getting a slot.
+     */
     suspend fun sendLiveKitJoin(timeoutMs: Long): LiveKitRoomInfoMessage {
         val deferred = CompletableDeferred<LiveKitRoomInfoMessage>()
         roomInfoDeferred = deferred
+        val timeoutJob = scope.launch {
+            delay(timeoutMs)
+            logger.warn("signaling: livekit_room_info timeout", mapOf("timeoutMs" to timeoutMs))
+            deferred.completeExceptionally(Exception("livekit_room_info timeout (${timeoutMs}ms)"))
+        }
+        roomInfoTimeoutJob = timeoutJob
+
         if (!send(LiveKitJoinMessage)) {
+            timeoutJob.cancel()
+            roomInfoTimeoutJob = null
             roomInfoDeferred = null
             throw IllegalStateException("WebSocket is not open")
         }
         return try {
-            withTimeout(timeoutMs) { deferred.await() }
+            deferred.await()
         } finally {
+            timeoutJob.cancel()
+            roomInfoTimeoutJob = null
             roomInfoDeferred = null
         }
     }
 
     suspend fun sendInitialPrompt(prompt: InitialPrompt, timeoutMs: Long) {
-        val result = awaitPromptAck(prompt, timeoutMs) {
-            send(PromptMessage(prompt = prompt.text, enhancePrompt = prompt.enhance))
-        }
-        if (!result.success) {
-            throw IllegalStateException(result.error ?: "Failed to send prompt")
-        }
+        sendPrompt(prompt.text, prompt.enhance, timeoutMs)
+    }
+
+    suspend fun sendPrompt(text: String, enhance: Boolean, timeoutMs: Long) {
+        awaitAck(
+            scope = scope,
+            timeoutMs = timeoutMs,
+            timeoutMessage = "Prompt send timed out",
+            ackFailureMessage = "Failed to send prompt",
+            register = ::registerFailHook,
+            unregister = ::unregisterFailHook,
+            awaitMatchingAck = {
+                val ack = _promptAckFlow.first { it.prompt == text }
+                AckResult(success = ack.success, error = ack.error)
+            },
+            send = { send(PromptMessage(prompt = text, enhancePrompt = enhance)) },
+        )
     }
 
     suspend fun setImage(
         imageBase64: String?,
         options: SetImageOptions = SetImageOptions(),
     ) {
-        val result = awaitSetImageAck(options.timeout) {
-            send(
-                SetImageMessage(
-                    imageData = imageBase64,
-                    prompt = options.prompt,
-                    enhancePrompt = options.enhance,
-                ),
-            )
-        }
-        if (!result.success) {
-            throw IllegalStateException(result.error ?: "Failed to set image")
-        }
+        awaitAck(
+            scope = scope,
+            timeoutMs = options.timeout,
+            timeoutMessage = "Image send timed out",
+            ackFailureMessage = "Failed to send image",
+            register = ::registerFailHook,
+            unregister = ::unregisterFailHook,
+            awaitMatchingAck = {
+                val ack = _setImageAckFlow.first()
+                AckResult(success = ack.success, error = ack.error)
+            },
+            send = {
+                send(
+                    SetImageMessage(
+                        imageData = imageBase64,
+                        prompt = options.prompt,
+                        enhancePrompt = options.enhance,
+                    ),
+                )
+            },
+        )
     }
 
     fun close() {
+        val closeError = Exception("Control channel closed")
         webSocket?.close(1000, "client disconnect")
+        resolvePendingWaits(closeError)
+        roomInfoDeferred?.completeExceptionally(closeError)
+        roomInfoTimeoutJob?.cancel()
         cleanup()
     }
 
     fun cleanup() {
         openDeferred = null
         roomInfoDeferred = null
+        roomInfoTimeoutJob = null
         webSocket = null
         scope.cancel()
         client.dispatcher.executorService.shutdown()
     }
 
-    private suspend fun awaitPromptAck(
-        prompt: InitialPrompt,
-        timeoutMs: Long,
-        sendBlock: () -> Boolean,
-    ): PromptAckMessage {
-        val deferred = CompletableDeferred<PromptAckMessage>()
-        val job = scope.launch {
-            deferred.complete(_promptAckFlow.first { it.prompt == prompt.text })
-        }
-        if (!sendBlock()) {
-            job.cancel()
-            throw IllegalStateException("WebSocket is not open")
-        }
-        return try {
-            withTimeout(timeoutMs) { deferred.await() }
-        } finally {
-            job.cancel()
-        }
-    }
-
-    private suspend fun awaitSetImageAck(
-        timeoutMs: Long,
-        sendBlock: () -> Boolean,
-    ): SetImageAckMessage {
-        val deferred = CompletableDeferred<SetImageAckMessage>()
-        val job = scope.launch {
-            deferred.complete(_setImageAckFlow.first())
-        }
-        if (!sendBlock()) {
-            job.cancel()
-            throw IllegalStateException("WebSocket is not open")
-        }
-        return try {
-            withTimeout(timeoutMs) { deferred.await() }
-        } finally {
-            job.cancel()
-        }
-    }
-
     private fun handleMessage(message: ServerMessage) {
-        logger.debug(
-            "Realtime signaling message",
-            mapOf("type" to message::class.java.simpleName),
-        )
         when (message) {
             is ErrorMessage -> {
                 logger.error(
-                    "Realtime signaling server error",
+                    "signaling: server error received",
                     mapOf("error" to message.error),
                 )
                 val error = Exception(message.error)
                 roomInfoDeferred?.completeExceptionally(error)
+                resolvePendingWaits(error)
                 onError(error, "server")
             }
             is SetImageAckMessage -> {
-                logger.info(
-                    "Realtime set_image_ack",
-                    mapOf("success" to message.success, "error" to message.error),
-                )
                 _setImageAckFlow.tryEmit(message)
             }
             is PromptAckMessage -> {
-                logger.info(
-                    "Realtime prompt_ack",
-                    mapOf("success" to message.success, "error" to message.error),
-                )
                 _promptAckFlow.tryEmit(message)
             }
             is GenerationStartedMessage -> {
-                logger.info("Realtime generation_started")
                 onStateChange(ConnectionState.GENERATING)
             }
             is GenerationTickMessage -> _generationTickFlow.tryEmit(message)
-            is GenerationEndedMessage -> {
-                logger.info(
-                    "Realtime generation_ended",
-                    mapOf("seconds" to message.seconds, "reason" to message.reason),
-                )
-            }
+            is GenerationEndedMessage -> _generationEndedFlow.tryEmit(message)
             is SessionIdMessage -> _sessionIdFlow.tryEmit(message.sessionId)
             is LiveKitRoomInfoMessage -> {
-                logger.info(
-                    "Realtime livekit_room_info",
-                    mapOf(
-                        "url" to message.liveKitUrl,
-                        "room" to message.roomName,
-                        "session" to message.sessionId,
-                    ),
-                )
                 _sessionIdFlow.tryEmit(message.sessionId)
                 _roomInfoFlow.tryEmit(message)
+                roomInfoTimeoutJob?.cancel()
+                roomInfoTimeoutJob = null
                 roomInfoDeferred?.complete(message)
             }
-            is StatusMessage -> {
-                logger.info(
-                    "Realtime status",
-                    mapOf("status" to message.status),
-                )
-                _statusFlow.tryEmit(message)
-            }
+            is StatusMessage -> _statusFlow.tryEmit(message)
             is QueuePositionMessage -> {
-                logger.info(
-                    "Realtime queue_position",
-                    mapOf(
-                        "position" to message.queuePosition,
-                        "size" to message.queueSize,
-                    ),
-                )
+                // Cancel the room-info timeout: a queued user may wait minutes.
+                roomInfoTimeoutJob?.cancel()
+                roomInfoTimeoutJob = null
                 _queuePositionFlow.tryEmit(message)
             }
             is ReadyMessage,
@@ -248,7 +232,6 @@ internal class SignalingChannel(
 
     private val listener = object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
-            logger.debug("Realtime signaling WebSocket opened")
             openDeferred?.complete(Unit)
         }
 
@@ -256,7 +239,6 @@ internal class SignalingChannel(
             try {
                 handleMessage(SignalingMessageParser.parse(text))
             } catch (e: Exception) {
-                logger.error("Failed to handle signaling message", mapOf("error" to e.message))
                 onError(e, "signaling")
             }
         }
@@ -265,11 +247,28 @@ internal class SignalingChannel(
             val error = if (t is Exception) t else Exception(t)
             openDeferred?.completeExceptionally(error)
             roomInfoDeferred?.completeExceptionally(error)
+            roomInfoTimeoutJob?.cancel()
+            resolvePendingWaits(error)
             onError(error, "websocket")
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-            logger.debug("Realtime signaling WebSocket closed", mapOf("code" to code, "reason" to reason))
+            val wasOpen = this@SignalingChannel.webSocket != null
+            val pendingCount: Int
+            synchronized(pendingFailHooks) { pendingCount = pendingFailHooks.size }
+            logger.warn(
+                "signaling: websocket closed",
+                mapOf(
+                    "code" to code,
+                    "reason" to reason,
+                    "wasConnected" to wasOpen,
+                    "pendingAcks" to pendingCount,
+                ),
+            )
+            val error = Exception("WebSocket closed: $code $reason")
+            roomInfoDeferred?.completeExceptionally(error)
+            roomInfoTimeoutJob?.cancel()
+            resolvePendingWaits(error)
         }
     }
 

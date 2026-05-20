@@ -7,12 +7,9 @@ import io.livekit.android.room.track.LocalVideoTrack
 import io.livekit.android.room.track.VideoTrack
 
 /**
- * Local or remote media stream surfaced by the realtime SDK.
- *
- * For caller-owned streams (created via [RealTimeClient.createLocalVideoStream])
- * the [room] is the LiveKit Room that owns the underlying tracks; the same
- * Room is later reused by the SDK to connect to the realtime session. Call
- * [dispose] when you are done previewing or after disconnecting.
+ * Local or remote media stream. For caller-owned streams [room] is the
+ * LiveKit Room that owns the tracks and is reused for the session connect;
+ * call [dispose] when done.
  */
 data class RealtimeMediaStream(
     val videoTrack: VideoTrack? = null,
@@ -20,10 +17,7 @@ data class RealtimeMediaStream(
     val id: String,
     val room: Room? = null,
 ) {
-    /**
-     * Stop capture, dispose tracks and disconnect the owning Room. Safe to
-     * call multiple times; best-effort on each underlying resource.
-     */
+    /** Safe to call multiple times; best-effort on each underlying resource. */
     fun dispose() {
         (videoTrack as? LocalVideoTrack)?.let { track ->
             try { track.stopCapture() } catch (_: Exception) {}

@@ -18,38 +18,25 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
-/**
- * Configuration for creating a [RealTimeClient].
- */
 data class RealTimeClientConfig(
     val apiKey: String,
     val baseUrl: String = "wss://api.stage-decart.com",
     val logger: Logger = NoopLogger,
-    /**
-     * When true, enables LiveKit's internal verbose logging AND the
-     * underlying libwebrtc native log lines. Very noisy — only use for
-     * diagnosing transport issues (codec negotiation, ICE, RTP, BWE).
-     */
-    val verboseTransport: Boolean = false,
 )
 
-/**
- * Output resolution for a realtime session. Defaults to 720p server-side when unset.
- */
+/** Server-side output resolution. Defaults to 720p when unset. */
 enum class Resolution(val value: String) {
     P720("720p"),
     P1080("1080p"),
 }
 
 /**
- * Options for connecting to a realtime model through LiveKit media transport.
- *
- * Callers are encouraged to create a local stream with
- * [RealTimeClient.createLocalVideoStream] first (so the same LiveKit Room is
- * used for preview and publish, matching the iOS / JS SDKs) and pass it to
- * [RealTimeClient.connect]. If no local stream is provided and [publishCamera]
- * is true the SDK will create one internally and dispose it on disconnect.
+ * Prefer creating a local stream with [RealTimeClient.createLocalVideoStream]
+ * and passing it in, so preview and publish share a single LiveKit Room.
+ * If [localStream] is null and [publishCamera] is true the SDK opens one
+ * internally and disposes it on disconnect.
  */
 data class ConnectOptions @JvmOverloads constructor(
     val model: RealtimeModel,
@@ -78,13 +65,9 @@ internal fun buildWebrtcUrl(
 }
 
 /**
- * Main entry point for Decart realtime sessions.
- *
- * WebSocket signaling remains Decart-owned, while media is transported through
- * LiveKit rooms returned by the realtime signaling handshake. The local video
- * track is created (and owned) by the caller through [createLocalVideoStream]
- * so previewing, capturing and publishing all share a single LiveKit Room —
- * the same design as the iOS SDK.
+ * Entry point for Decart realtime sessions. WebSocket signaling is
+ * Decart-owned; media is transported through a LiveKit room returned by
+ * the signaling handshake.
  */
 class RealTimeClient(
     private val context: Context,
@@ -94,14 +77,10 @@ class RealTimeClient(
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     init {
-        if (config.verboseTransport) {
-            io.livekit.android.LiveKit.loggingLevel = io.livekit.android.util.LoggingLevel.VERBOSE
-            io.livekit.android.LiveKit.enableWebRTCLogging = true
-            logger.info(
-                "LiveKit verbose transport logging enabled",
-                mapOf("webrtcLogs" to true),
-            )
-        }
+        // Silence LiveKit's internal logger and the libwebrtc native logger;
+        // events surface through the injected [Logger] and [diagnostics] only.
+        io.livekit.android.LiveKit.loggingLevel = io.livekit.android.util.LoggingLevel.OFF
+        io.livekit.android.LiveKit.enableWebRTCLogging = false
     }
 
     private var sessionManager: RealtimeSessionManager? = null
@@ -115,6 +94,12 @@ class RealTimeClient(
     private val _generationTicks = MutableSharedFlow<GenerationTickMessage>(extraBufferCapacity = 10)
     val generationTicks: SharedFlow<GenerationTickMessage> = _generationTicks.asSharedFlow()
 
+    private val _generationEnded = MutableSharedFlow<GenerationEndedMessage>(extraBufferCapacity = 10)
+    val generationEnded: SharedFlow<GenerationEndedMessage> = _generationEnded.asSharedFlow()
+
+    private val _queuePositionUpdates = MutableSharedFlow<QueuePositionMessage>(replay = 1, extraBufferCapacity = 10)
+    val queuePositionUpdates: SharedFlow<QueuePositionMessage> = _queuePositionUpdates.asSharedFlow()
+
     private val _diagnostics = MutableSharedFlow<DiagnosticEvent>(extraBufferCapacity = 50)
     val diagnostics: SharedFlow<DiagnosticEvent> = _diagnostics.asSharedFlow()
 
@@ -124,24 +109,20 @@ class RealTimeClient(
     private val _localStreamUpdates = MutableSharedFlow<RealtimeMediaStream>(replay = 1, extraBufferCapacity = 10)
     val localStreamUpdates: SharedFlow<RealtimeMediaStream> = _localStreamUpdates.asSharedFlow()
 
-    // Kept for source compatibility with observers. LiveKit stats are not surfaced yet.
-    private val _stats = MutableSharedFlow<WebRTCStats>(extraBufferCapacity = 10)
-    val stats: SharedFlow<WebRTCStats> = _stats.asSharedFlow()
+    private val _sessionStarted = MutableStateFlow<SessionStarted?>(null)
+    val sessionStarted: StateFlow<SessionStarted?> = _sessionStarted.asStateFlow()
 
-    var sessionId: String? = null
-        private set
+    val sessionId: String?
+        get() = _sessionStarted.value?.sessionId
+
+    val subscribeToken: String?
+        get() = _sessionStarted.value?.subscribeToken
 
     /**
-     * Create a LocalVideoTrack-backed [RealtimeMediaStream] that the caller can
-     * render as a preview and later hand to [connect]. The returned stream
-     * owns its LiveKit [io.livekit.android.room.Room]; the caller is
-     * responsible for disposing it (call [RealtimeMediaStream.dispose] or stop
-     * the tracks manually) when the preview is no longer needed.
-     *
-     * Delegates to the static [RealTimeClient.createLocalVideoStream] so the
-     * preview lifecycle does not depend on any per-instance state of this
-     * client — callers can build a preview before they have decided which
-     * `apiKey` / [RealTimeClient] to use.
+     * Build a preview-ready [RealtimeMediaStream]. The caller owns the
+     * returned stream's LiveKit Room and must [RealtimeMediaStream.dispose]
+     * it. Delegates to the static factory so preview can be built before
+     * a [RealTimeClient] exists.
      */
     @JvmOverloads
     fun createLocalVideoStream(
@@ -164,9 +145,6 @@ class RealTimeClient(
         return stream
     }
 
-    /**
-     * Convenience overload that derives capture dimensions from the model.
-     */
     @JvmOverloads
     fun createLocalVideoStream(
         model: RealtimeModel,
@@ -181,12 +159,6 @@ class RealTimeClient(
         configuration = configuration,
     )
 
-    /**
-     * Connect a realtime session. When [localStream] is provided the SDK
-     * publishes its tracks against the Room that owns them. When null, and
-     * [ConnectOptions.publishCamera] is true, the SDK creates an internal
-     * stream and disposes it on [disconnect].
-     */
     @JvmOverloads
     suspend fun connect(
         options: ConnectOptions,
@@ -222,8 +194,10 @@ class RealTimeClient(
                     options.onRemoteStream?.invoke(stream)
                 },
                 onConnectionStateChange = { state -> _connectionState.value = state },
-                onSessionId = { id -> sessionId = id },
+                onSessionStarted = { started -> _sessionStarted.update { started } },
                 onGenerationTick = { tick -> _generationTicks.tryEmit(tick) },
+                onGenerationEnded = { ended -> _generationEnded.tryEmit(ended) },
+                onQueuePosition = { qp -> _queuePositionUpdates.tryEmit(qp) },
                 onError = { error ->
                     logger.error("Realtime error", mapOf("error" to error.message))
                     _errors.tryEmit(ErrorClassifier.classifyWebrtcError(error))
@@ -237,20 +211,18 @@ class RealTimeClient(
     fun disconnect() {
         sessionManager?.cleanup()
         sessionManager = null
-        sessionId = null
+        _sessionStarted.value = null
         _connectionState.value = ConnectionState.DISCONNECTED
     }
 
-    fun setPrompt(prompt: String, enhance: Boolean = true) {
+    /** Throws on ack failure, timeout, or websocket disconnect. */
+    suspend fun setPrompt(prompt: String, enhance: Boolean = true, timeoutMs: Long = 15_000L) {
         val manager = sessionManager ?: throw IllegalStateException("Not connected")
         val state = manager.getConnectionState()
         if (state != ConnectionState.CONNECTED && state != ConnectionState.GENERATING) {
             throw IllegalStateException("Cannot send message: connection is $state")
         }
-        val sent = manager.sendMessage(PromptMessage(prompt = prompt, enhancePrompt = enhance))
-        if (!sent) {
-            throw IllegalStateException("WebSocket is not open")
-        }
+        manager.setPrompt(prompt, enhance, timeoutMs)
     }
 
     suspend fun setImage(
@@ -279,10 +251,8 @@ class RealTimeClient(
 
     companion object {
         /**
-         * Stateless preview-track factory. Mirrors iOS's
-         * `LocalVideoTrack.createCameraTrack(...)` so the local preview can be
-         * built before a [RealTimeClient] exists — e.g. while the user is
-         * still typing their API key.
+         * Stateless preview-track factory: callers can build a preview
+         * before they've decided which `apiKey` to use.
          */
         @JvmStatic
         @JvmOverloads
@@ -304,7 +274,6 @@ class RealTimeClient(
             logger = logger,
         )
 
-        /** Convenience overload that derives capture dimensions from the model. */
         @JvmStatic
         @JvmOverloads
         fun createLocalVideoStream(

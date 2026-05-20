@@ -9,12 +9,9 @@ import android.content.Context
 import io.livekit.android.LiveKit
 
 /**
- * Builds a [RealtimeMediaStream] that the caller owns. The returned stream's
- * [RealtimeMediaStream.room] is the same LiveKit [io.livekit.android.room.Room]
- * that will later be passed to [LiveKitMediaChannel.connect], so the renderer
- * EGL context, the local capture pipeline and the publish path all share a
- * single Room — mirroring how iOS uses `LocalVideoTrack.createCameraTrack`
- * together with the LiveKit `Room` it later connects with.
+ * The returned stream's LiveKit Room is the one later passed to
+ * [LiveKitMediaChannel.connect], so renderer EGL, capture and publish all
+ * share one Room.
  */
 internal object LocalStreamFactory {
 
@@ -48,16 +45,6 @@ internal object LocalStreamFactory {
         } else {
             null
         }
-
-        logger.info(
-            "Created local camera stream",
-            mapOf(
-                "width" to width,
-                "height" to height,
-                "facing" to facing.name,
-                "audio" to includeMicrophone,
-            ),
-        )
 
         return RealtimeMediaStream(
             videoTrack = videoTrack,
