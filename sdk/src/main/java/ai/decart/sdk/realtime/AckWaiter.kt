@@ -43,7 +43,6 @@ internal suspend fun awaitAck(
     }
 
     failHook = { resolve(Result.failure(it)) }
-    register(failHook)
 
     jobs += scope.launch(start = CoroutineStart.UNDISPATCHED) {
         delay(timeoutMs)
@@ -55,6 +54,11 @@ internal suspend fun awaitAck(
         if (ack.success) resolve(Result.success(Unit))
         else resolve(Result.failure(Exception(ack.error ?: ackFailureMessage)))
     }
+
+    // Register only after jobs is fully populated. The failure path runs on
+    // OkHttp threads and iterates jobs.forEach — exposing an incomplete list
+    // would race with this thread's additions.
+    register(failHook)
 
     if (!send()) {
         resolve(Result.failure(Exception("WebSocket is not open")))
