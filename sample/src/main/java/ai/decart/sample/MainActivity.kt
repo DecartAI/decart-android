@@ -11,6 +11,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -234,60 +235,40 @@ class MainActivity : ComponentActivity() {
                 connectionState == ConnectionState.GENERATING
 
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Video views
-            Row(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .aspectRatio(9f / 16f)
+                    .background(Color.Black, RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(8.dp))
             ) {
-                // Local camera
+                TrackItem(
+                    trackReference = remoteStream?.toTrackReference(Track.Source.CAMERA),
+                    videoTrack = remoteStream?.videoTrack,
+                    room = remoteStream?.room ?: localStream?.room,
+                    modifier = Modifier.fillMaxSize(),
+                )
+
                 Box(
                     modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .background(Color.DarkGray, RoundedCornerShape(8.dp))
+                        .align(Alignment.TopEnd)
+                        .padding(12.dp)
+                        .fillMaxWidth(0.2f)
+                        .aspectRatio(9f / 16f)
                         .clip(RoundedCornerShape(8.dp))
+                        .border(1.dp, Color.White.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
                 ) {
                     TrackItem(
                         trackReference = localStream?.toTrackReference(Track.Source.CAMERA),
                         videoTrack = localStream?.videoTrack,
                         room = localStream?.room,
-                        label = "Local",
                         mirror = true,
                         modifier = Modifier.fillMaxSize(),
-                    )
-                    Text(
-                        "Local",
-                        color = Color.White.copy(alpha = 0.5f),
-                        modifier = Modifier.align(Alignment.TopStart).padding(4.dp),
-                        style = MaterialTheme.typography.labelSmall
-                    )
-                }
-
-                // Remote AI output
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .background(Color.DarkGray, RoundedCornerShape(8.dp))
-                        .clip(RoundedCornerShape(8.dp))
-                ) {
-                    TrackItem(
-                        trackReference = remoteStream?.toTrackReference(Track.Source.CAMERA),
-                        videoTrack = remoteStream?.videoTrack,
-                        room = remoteStream?.room ?: localStream?.room,
-                        label = "AI Output",
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                    Text(
-                        "AI Output",
-                        color = Color.White.copy(alpha = 0.5f),
-                        modifier = Modifier.align(Alignment.TopStart).padding(4.dp),
-                        style = MaterialTheme.typography.labelSmall
                     )
                 }
             }
