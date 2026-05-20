@@ -10,12 +10,12 @@ import android.content.Context
  *
  * @property apiKey Your Decart API key (required)
  * @property baseUrl WebSocket base URL for the realtime API
- * @property httpBaseUrl HTTP base URL for the batch queue API
+ * @property httpBaseUrl HxTTP base URL for the batch queue API
  * @property logLevel Minimum log level for SDK logging
  */
 data class DecartClientConfig(
     val apiKey: String,
-    val baseUrl: String = "wss://api.decart.ai",
+    val baseUrl: String = "wss://api.stage-decart.com",
     val httpBaseUrl: String = "https://api.decart.ai",
     val logLevel: LogLevel = LogLevel.WARN
 )
