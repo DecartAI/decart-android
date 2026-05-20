@@ -72,7 +72,6 @@ internal class LiveKitMediaChannel(
     val firstFrameEvents: SharedFlow<FirstFrameEventInternal> = _firstFrameEvents
 
     suspend fun connect(roomInfo: LiveKitRoomInfoMessage, providedRoom: Room?) {
-        roomConnectedAtNs = System.nanoTime()
         val nextRoom = providedRoom ?: createOwnedRoom()
         adoptRoom(nextRoom, owns = providedRoom == null)
         remoteVideoTrack = null
@@ -80,6 +79,7 @@ internal class LiveKitMediaChannel(
         detachFirstFrameSink()
 
         nextRoom.connect(roomInfo.liveKitUrl, roomInfo.token, connectOptions)
+        roomConnectedAtNs = System.nanoTime()
         emitExistingRemoteTracks(nextRoom)
     }
 
@@ -225,7 +225,6 @@ internal class LiveKitMediaChannel(
     private fun handleRoomEvent(room: Room, event: RoomEvent) {
         when (event) {
             is RoomEvent.Connected -> {
-                logTiming("ROOM_CONNECTED")
                 _connectionStateUpdates.tryEmit(ConnectionState.CONNECTED)
             }
             is RoomEvent.Reconnecting -> _connectionStateUpdates.tryEmit(ConnectionState.RECONNECTING)
@@ -239,28 +238,14 @@ internal class LiveKitMediaChannel(
                 _disconnectUpdates.tryEmit(DisconnectInfo(event.error?.message ?: event.reason.name))
             }
             is RoomEvent.ParticipantConnected -> {
-                logTiming("PARTICIPANT_CONNECTED identity=${event.participant.identity?.value}")
-                emitExistingRemoteTracks(room)
-            }
-            is RoomEvent.TrackPublished -> {
-                logTiming(
-                    "REMOTE_TRACK_PUBLISHED identity=${event.participant.identity?.value} " +
-                        "kind=${event.publication.kind.name} source=${event.publication.source.name} sid=${event.publication.sid}",
-                )
-                (event.publication as? RemoteTrackPublication)?.setSubscribed(true)
                 emitExistingRemoteTracks(room)
             }
             is RoomEvent.TrackSubscribed -> {
-                logTiming(
-                    "REMOTE_TRACK_SUBSCRIBED identity=${event.participant.identity?.value} " +
-                        "kind=${event.track.kind.name} sid=${event.publication.sid}",
-                )
                 handleRemoteTrack(event.participant, event.track)
             }
-            is RoomEvent.LocalTrackSubscribed -> {
-                logTiming(
-                    "LOCAL_TRACK_SUBSCRIBED sid=${event.publication.sid} source=${event.publication.source.name}",
-                )
+            is RoomEvent.TrackPublished -> {
+                (event.publication as? RemoteTrackPublication)?.setSubscribed(true)
+                emitExistingRemoteTracks(room)
             }
             is RoomEvent.TrackSubscriptionFailed -> {
                 logger.warn(
@@ -280,12 +265,6 @@ internal class LiveKitMediaChannel(
             }
             else -> Unit
         }
-    }
-
-    private fun logTiming(message: String) {
-        val ref = roomConnectedAtNs
-        val deltaMs = if (ref == 0L) 0.0 else (System.nanoTime() - ref) / 1_000_000.0
-        android.util.Log.i("DecartTiming", "lk-room t+${"%.0f".format(deltaMs)}ms $message")
     }
 
     private fun emitExistingRemoteTracks(room: Room) {
@@ -376,6 +355,6 @@ internal class LiveKitMediaChannel(
 
     companion object {
         private const val INFERENCE_SERVER_PREFIX = "inference-server-"
-        private const val STATS_INTERVAL_MS = 500L
+        private const val STATS_INTERVAL_MS = 3_000L
     }
 }

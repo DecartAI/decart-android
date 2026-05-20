@@ -212,37 +212,12 @@ class MainActivity : ComponentActivity() {
         }
         LaunchedEffect(client) {
             val c = client ?: return@LaunchedEffect
-            val sessionStartNs = System.nanoTime()
-            var firstEncodedReported = false
-            c.diagnostics.collect { event ->
-                val tMs = "%.0f".format((System.nanoTime() - sessionStartNs) / 1_000_000.0)
-                when (event) {
-                    is DiagnosticEvent.PhaseTiming -> {
-                        val d = event.data
-                        val ms = "%.0f".format(d.durationMs)
-                        val outcome = if (d.success) "ok" else "fail(${d.error ?: "?"})"
-                        Log.i("DecartTiming", "t=${tMs}ms phase=${d.phase.name} ${ms}ms $outcome")
-                    }
-                    is DiagnosticEvent.FirstFrame -> {
-                        val d = event.data
-                        val ms = "%.0f".format(d.timeSinceConnectMs)
-                        Log.i("DecartTiming", "t=${tMs}ms phase=FIRST_FRAME ${ms}ms ${d.width}x${d.height}")
-                    }
-                    is DiagnosticEvent.PublishStats -> {
-                        val d = event.data
-                        if (!firstEncodedReported && d.framesEncoded > 0) {
-                            firstEncodedReported = true
-                            Log.i(
-                                "DecartTiming",
-                                "t=${tMs}ms FIRST_FRAME_ENCODED framesEncoded=${d.framesEncoded} ${d.frameWidth}x${d.frameHeight} encoder=${d.encoderImplementation}",
-                            )
-                        }
-                        Log.i(
-                            "DecartTiming",
-                            "t=${tMs}ms publish frames=${d.framesEncoded}(+${d.deltaFrames}) bytes=${d.bytesSent}(+${d.deltaBytes}) ${d.frameWidth}x${d.frameHeight} limit=${d.qualityLimitationReason ?: "-"}",
-                        )
-                    }
-                    else -> Unit
+            c.diagnostics.collectLatest { event ->
+                if (event is DiagnosticEvent.FirstFrame) {
+                    Log.i(
+                        "DecartSample",
+                        "first remote frame in ${event.data.timeSinceConnectMs} ms (${event.data.width}x${event.data.height})",
+                    )
                 }
             }
         }
