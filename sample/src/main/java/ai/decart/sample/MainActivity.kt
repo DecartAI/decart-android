@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -29,31 +30,13 @@ import androidx.core.content.ContextCompat
 import ai.decart.sdk.*
 import ai.decart.sdk.queue.*
 import ai.decart.sdk.realtime.*
+import io.livekit.android.compose.types.TrackReference
+import io.livekit.android.room.track.Track
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import io.livekit.android.LiveKit
-import io.livekit.android.renderer.TextureViewRenderer
-import io.livekit.android.room.Room
-import io.livekit.android.room.track.CameraPosition
-import io.livekit.android.room.track.LocalVideoTrack
-import io.livekit.android.room.track.LocalVideoTrackOptions
-import io.livekit.android.room.track.VideoTrack
-import io.livekit.android.room.track.VideoCaptureParameter
-import livekit.org.webrtc.EglBase
 import java.io.File
 
 class MainActivity : ComponentActivity() {
-
-    private var eglBase: EglBase? = null
-    private var previewRoom: Room? = null
-    private var previewVideoTrack: LocalVideoTrack? = null
-    private var localVideoTrack: VideoTrack? = null
-    private var remoteVideoTrack: VideoTrack? = null
-    private var localRenderer: TextureViewRenderer? = null
-    private var localRendererRoom: Room? = null
-    private var remoteRenderer: TextureViewRenderer? = null
-    private var remoteRendererRoom: Room? = null
-    private var client: RealTimeClient? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,7 +45,6 @@ class MainActivity : ComponentActivity() {
             ActivityResultContracts.RequestMultiplePermissions()
         ) { permissions ->
             if (permissions.values.all { it }) {
-                initializeLiveKitRendering()
                 showUI()
             } else {
                 Toast.makeText(this, "Camera and mic permissions required", Toast.LENGTH_LONG).show()
@@ -74,7 +56,6 @@ class MainActivity : ComponentActivity() {
         val hasMic = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
         if (hasCamera && hasMic) {
-            initializeLiveKitRendering()
             showUI()
         } else {
             permissionLauncher.launch(arrayOf(
@@ -82,96 +63,6 @@ class MainActivity : ComponentActivity() {
                 Manifest.permission.RECORD_AUDIO
             ))
         }
-    }
-
-    private fun initializeLiveKitRendering() {
-        eglBase = EglBase.create()
-    }
-
-    private fun attachLocalVideo(stream: RealtimeMediaStream) {
-        localRenderer?.let { renderer ->
-            initializeRenderer(renderer, stream.room, isLocal = true)
-            localVideoTrack?.removeRenderer(renderer)
-            stream.videoTrack?.addRenderer(renderer)
-        }
-        localVideoTrack = stream.videoTrack
-    }
-
-    private fun attachRemoteVideo(stream: RealtimeMediaStream) {
-        remoteRenderer?.let { renderer ->
-            initializeRenderer(renderer, stream.room, isLocal = false)
-            remoteVideoTrack?.removeRenderer(renderer)
-            stream.videoTrack?.addRenderer(renderer)
-        }
-        remoteVideoTrack = stream.videoTrack
-    }
-
-    private fun startPreviewCamera() {
-        if (previewVideoTrack != null || client != null) return
-        try {
-            val room = LiveKit.create(applicationContext)
-            val track = room.localParticipant.createVideoTrack(
-                name = "preview_video",
-                options = LocalVideoTrackOptions(
-                    position = CameraPosition.FRONT,
-                    captureParams = VideoCaptureParameter(1280, 720, 30),
-                ),
-            )
-            track.startCapture()
-            previewRoom = room
-            previewVideoTrack = track
-            attachLocalVideo(
-                RealtimeMediaStream(
-                    videoTrack = track,
-                    id = RealtimeMediaStream.LOCAL_STREAM_ID,
-                    room = room,
-                ),
-            )
-        } catch (e: Exception) {
-            Toast.makeText(this, "Failed to start camera preview: ${e.message}", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    private fun stopPreviewCamera() {
-        val previewTrack = previewVideoTrack ?: return
-        localRenderer?.let { renderer -> previewTrack.removeRenderer(renderer) }
-        previewVideoTrack = null
-        if (localVideoTrack === previewTrack) {
-            localVideoTrack = null
-        }
-        try { previewTrack.stopCapture() } catch (_: Exception) {}
-        previewTrack.stop()
-        previewTrack.dispose()
-        previewRoom?.disconnect()
-        previewRoom = null
-    }
-
-    private fun initializeRenderer(renderer: TextureViewRenderer, room: Room?, isLocal: Boolean) {
-        room ?: return
-        val currentRoom = if (isLocal) localRendererRoom else remoteRendererRoom
-        if (currentRoom == room) return
-        if (currentRoom != null) {
-            renderer.release()
-        }
-        renderer.setEnableHardwareScaler(true)
-        room.initVideoRenderer(renderer)
-        if (isLocal) {
-            localRendererRoom = room
-        } else {
-            remoteRendererRoom = room
-        }
-    }
-
-    private fun clearVideoTracks() {
-        localRenderer?.let { renderer -> localVideoTrack?.removeRenderer(renderer) }
-        remoteRenderer?.let { renderer -> remoteVideoTrack?.removeRenderer(renderer) }
-        stopPreviewCamera()
-        localRenderer?.release()
-        remoteRenderer?.release()
-        localVideoTrack = null
-        remoteVideoTrack = null
-        localRendererRoom = null
-        remoteRendererRoom = null
     }
 
     private fun showUI() {
@@ -242,7 +133,7 @@ class MainActivity : ComponentActivity() {
     }
 
     // -------------------------------------------------------------------------
-    // Realtime tab — LiveKit media UI
+    // Realtime tab — caller-owned local stream + LiveKit media UI
     // -------------------------------------------------------------------------
 
     @OptIn(ExperimentalMaterial3Api::class)
@@ -258,29 +149,85 @@ class MainActivity : ComponentActivity() {
         var modelMenuExpanded by remember { mutableStateOf(false) }
         var statusMessage by remember { mutableStateOf("Ready") }
 
-        // Collect connection state from client
-        val currentClient = client
-        if (currentClient != null) {
-            LaunchedEffect(currentClient) {
-                currentClient.connectionState.collectLatest { state ->
-                    connectionState = state
-                    statusMessage = when (state) {
-                        ConnectionState.DISCONNECTED -> "Disconnected"
-                        ConnectionState.CONNECTING -> "Connecting..."
-                        ConnectionState.CONNECTED -> "Connected"
-                        ConnectionState.GENERATING -> "Generating"
-                        ConnectionState.RECONNECTING -> "Reconnecting..."
-                    }
-                }
+        // Local preview is created lazily, independent of `apiKey` so typing
+        // the API key does not churn LiveKit Rooms (each Room owns a native
+        // PeerConnectionFactory + EglBase + capturer).
+        // It is keyed only on the selected model's capture resolution.
+        var localStream by remember { mutableStateOf<RealtimeMediaStream?>(null) }
+        LaunchedEffect(selectedModel) {
+            localStream?.dispose()
+            localStream = null
+            try {
+                localStream = RealTimeClient.createLocalVideoStream(
+                    context = context,
+                    model = selectedModel,
+                    facing = FacingMode.FRONT,
+                    logger = AndroidLogger(LogLevel.DEBUG),
+                )
+            } catch (e: Exception) {
+                Log.e("DecartSample", "Failed to start local preview", e)
+                statusMessage = "Camera error: ${e.message}"
             }
-            LaunchedEffect(currentClient) {
-                currentClient.errors.collectLatest { error ->
-                    statusMessage = "Error: ${error.message}"
+        }
+
+        // The realtime client itself is created lazily on Connect — also so
+        // that typing the API key does not spin up anything heavy.
+        var client by remember { mutableStateOf<RealTimeClient?>(null) }
+        var remoteStream by remember { mutableStateOf<RealtimeMediaStream?>(null) }
+
+        LaunchedEffect(client) {
+            val c = client ?: return@LaunchedEffect
+            c.connectionState.collectLatest { state ->
+                connectionState = state
+                statusMessage = when (state) {
+                    ConnectionState.DISCONNECTED -> "Disconnected"
+                    ConnectionState.CONNECTING -> "Connecting..."
+                    ConnectionState.CONNECTED -> "Connected"
+                    ConnectionState.GENERATING -> "Generating"
+                    ConnectionState.RECONNECTING -> "Reconnecting..."
                 }
             }
         }
-        LaunchedEffect(Unit) {
-            startPreviewCamera()
+        LaunchedEffect(client) {
+            val c = client ?: return@LaunchedEffect
+            c.errors.collectLatest { error ->
+                statusMessage = "Error: ${error.message}"
+            }
+        }
+        LaunchedEffect(client) {
+            val c = client ?: return@LaunchedEffect
+            c.remoteStreamUpdates.collectLatest { stream ->
+                remoteStream = stream
+            }
+        }
+        LaunchedEffect(client) {
+            val c = client ?: return@LaunchedEffect
+            c.localStreamUpdates.collectLatest { stream ->
+                if (localStream !== stream) {
+                    localStream = stream
+                    remoteStream = null
+                }
+            }
+        }
+        LaunchedEffect(client) {
+            val c = client ?: return@LaunchedEffect
+            c.diagnostics.collectLatest { event ->
+                if (event is DiagnosticEvent.FirstFrame) {
+                    Log.i(
+                        "DecartSample",
+                        "first remote frame in ${event.data.timeSinceConnectMs} ms (${event.data.width}x${event.data.height})",
+                    )
+                }
+            }
+        }
+
+        DisposableEffect(Unit) {
+            onDispose {
+                client?.release()
+                client = null
+                localStream?.dispose()
+                localStream = null
+            }
         }
 
         val isConnected = connectionState == ConnectionState.CONNECTED ||
@@ -303,15 +250,15 @@ class MainActivity : ComponentActivity() {
                         .weight(1f)
                         .fillMaxHeight()
                         .background(Color.DarkGray, RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(8.dp))
                 ) {
-                    AndroidView(
-                        factory = { ctx ->
-                            TextureViewRenderer(ctx).also { renderer ->
-                                localRenderer = renderer
-                                localVideoTrack?.addRenderer(renderer)
-                            }
-                        },
-                        modifier = Modifier.fillMaxSize()
+                    TrackItem(
+                        trackReference = localStream?.toTrackReference(Track.Source.CAMERA),
+                        videoTrack = localStream?.videoTrack,
+                        room = localStream?.room,
+                        label = "Local",
+                        mirror = true,
+                        modifier = Modifier.fillMaxSize(),
                     )
                     Text(
                         "Local",
@@ -327,16 +274,14 @@ class MainActivity : ComponentActivity() {
                         .weight(1f)
                         .fillMaxHeight()
                         .background(Color.DarkGray, RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(8.dp))
                 ) {
-                    AndroidView(
-                        factory = { ctx ->
-                            TextureViewRenderer(ctx).also { renderer ->
-                                renderer.setEnableHardwareScaler(true)
-                                remoteRenderer = renderer
-                                remoteVideoTrack?.addRenderer(renderer)
-                            }
-                        },
-                        modifier = Modifier.fillMaxSize()
+                    TrackItem(
+                        trackReference = remoteStream?.toTrackReference(Track.Source.CAMERA),
+                        videoTrack = remoteStream?.videoTrack,
+                        room = remoteStream?.room ?: localStream?.room,
+                        label = "AI Output",
+                        modifier = Modifier.fillMaxSize(),
                     )
                     Text(
                         "AI Output",
@@ -447,62 +392,77 @@ class MainActivity : ComponentActivity() {
             Button(
                 onClick = {
                     if (isConnected || connectionState == ConnectionState.CONNECTING) {
-                        client?.disconnect()
-                        clearVideoTracks()
-                        client?.release()
+                        // The Room used by the SDK is the same one owned by
+                        // the preview stream. Release the client first so it
+                        // tears down its session, then dispose the preview
+                        // (also disconnects the Room) and rebuild a fresh
+                        // preview that re-runs the LiveKitVideoView factory.
+                        val current = client
                         client = null
+                        current?.disconnect()
+                        current?.release()
+                        localStream?.dispose()
+                        localStream = null
+                        remoteStream = null
                         statusMessage = "Disconnected"
                         connectionState = ConnectionState.DISCONNECTED
-                        startPreviewCamera()
+                        coroutineScope.launch {
+                            try {
+                                localStream = RealTimeClient.createLocalVideoStream(
+                                    context = context,
+                                    model = selectedModel,
+                                    facing = FacingMode.FRONT,
+                                    logger = AndroidLogger(LogLevel.DEBUG),
+                                )
+                            } catch (e: Exception) {
+                                Log.e("DecartSample", "Failed to restart preview", e)
+                                statusMessage = "Camera error: ${e.message}"
+                            }
+                        }
                     } else {
                         if (apiKey.isBlank()) {
                             statusMessage = "Please enter an API key"
                             return@Button
                         }
-                        statusMessage = "Starting camera..."
+                        val preview = localStream
+                        if (preview == null) {
+                            statusMessage = "Camera not ready"
+                            return@Button
+                        }
+                        statusMessage = "Connecting..."
                         connectionState = ConnectionState.CONNECTING
+
+                        val rtClient = RealTimeClient(
+                            context = context,
+                            config = RealTimeClientConfig(
+                                apiKey = apiKey,
+                                baseUrl = "wss://api.stage-decart.com",
+                                logger = AndroidLogger(LogLevel.DEBUG),
+                                verboseTransport = true,
+                            ),
+                        )
+                        client = rtClient
 
                         coroutineScope.launch {
                             try {
-                                stopPreviewCamera()
-                                // Create client
-                                val rtClient = RealTimeClient(
-                                    context = context,
-                                    config = RealTimeClientConfig(
-                                        apiKey = apiKey,
-                                        baseUrl = "wss://api.decart.ai",
-                                        logger = AndroidLogger(LogLevel.DEBUG)
-                                    )
-                                )
-                                client = rtClient
-
                                 val initialPromptObj = if (prompt.isNotBlank()) {
                                     InitialPrompt(text = prompt, enhance = enhancePrompt)
                                 } else null
 
                                 rtClient.connect(
-                                    ConnectOptions(
+                                    options = ConnectOptions(
                                         model = selectedModel,
                                         initialPrompt = initialPromptObj,
                                         facing = FacingMode.FRONT,
                                         publishCamera = true,
                                         publishMicrophone = false,
-                                        onLocalStream = { stream ->
-                                            attachLocalVideo(stream)
-                                        },
-                                        onRemoteStream = { stream ->
-                                            attachRemoteVideo(stream)
-                                        }
                                     ),
+                                    localStream = preview,
                                 )
                                 statusMessage = "Connected!"
                             } catch (e: Exception) {
                                 statusMessage = "Failed: ${e.message}"
                                 connectionState = ConnectionState.DISCONNECTED
-                                clearVideoTracks()
-                                client?.release()
-                                client = null
-                                startPreviewCamera()
                             }
                         }
                     }
@@ -911,16 +871,29 @@ class MainActivity : ComponentActivity() {
             Spacer(modifier = Modifier.height(16.dp))
         }
     }
+}
 
-    override fun onDestroy() {
-        super.onDestroy()
-        client?.disconnect()
-        clearVideoTracks()
-        client?.release()
-        client = null
-        localRenderer?.release()
-        remoteRenderer?.release()
-        eglBase?.release()
-        eglBase = null
-    }
+private fun RealtimeMediaStream.toTrackReference(defaultSource: Track.Source): TrackReference? {
+    val room = room ?: return null
+    val track = videoTrack
+
+    val participant = if (id == RealtimeMediaStream.LOCAL_STREAM_ID) {
+        room.localParticipant
+    } else {
+        room.remoteParticipants.values.firstOrNull { participant ->
+            participant.trackPublications.values.any { publication ->
+                publication.track === track || publication.source == defaultSource
+            }
+        } ?: room.remoteParticipants.values.firstOrNull()
+    } ?: return null
+
+    val publication = participant.trackPublications.values.firstOrNull { publication ->
+        publication.track === track
+    } ?: participant.getTrackPublication(defaultSource)
+
+    return TrackReference(
+        participant = participant,
+        publication = publication,
+        source = publication?.source ?: defaultSource,
+    )
 }

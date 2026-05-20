@@ -6,6 +6,7 @@ import ai.decart.sdk.ErrorClassifier
 import ai.decart.sdk.Logger
 import ai.decart.sdk.NoopLogger
 import ai.decart.sdk.RealtimeModel
+import ai.decart.sdk.realtime.livekit.LocalStreamFactory
 import android.content.Context
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,8 +24,14 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 data class RealTimeClientConfig(
     val apiKey: String,
-    val baseUrl: String = "wss://api.decart.ai",
+    val baseUrl: String = "wss://api.stage-decart.com",
     val logger: Logger = NoopLogger,
+    /**
+     * When true, enables LiveKit's internal verbose logging AND the
+     * underlying libwebrtc native log lines. Very noisy — only use for
+     * diagnosing transport issues (codec negotiation, ICE, RTP, BWE).
+     */
+    val verboseTransport: Boolean = false,
 )
 
 /**
@@ -37,6 +44,12 @@ enum class Resolution(val value: String) {
 
 /**
  * Options for connecting to a realtime model through LiveKit media transport.
+ *
+ * Callers are encouraged to create a local stream with
+ * [RealTimeClient.createLocalVideoStream] first (so the same LiveKit Room is
+ * used for preview and publish, matching the iOS / JS SDKs) and pass it to
+ * [RealTimeClient.connect]. If no local stream is provided and [publishCamera]
+ * is true the SDK will create one internally and dispose it on disconnect.
  */
 data class ConnectOptions @JvmOverloads constructor(
     val model: RealtimeModel,
@@ -47,7 +60,6 @@ data class ConnectOptions @JvmOverloads constructor(
     val publishCamera: Boolean = true,
     val publishMicrophone: Boolean = false,
     val facing: FacingMode = FacingMode.FRONT,
-    val onLocalStream: ((RealtimeMediaStream) -> Unit)? = null,
     val onRemoteStream: ((RealtimeMediaStream) -> Unit)? = null,
 )
 
@@ -69,7 +81,10 @@ internal fun buildWebrtcUrl(
  * Main entry point for Decart realtime sessions.
  *
  * WebSocket signaling remains Decart-owned, while media is transported through
- * LiveKit rooms returned by the realtime signaling handshake.
+ * LiveKit rooms returned by the realtime signaling handshake. The local video
+ * track is created (and owned) by the caller through [createLocalVideoStream]
+ * so previewing, capturing and publishing all share a single LiveKit Room —
+ * the same design as the iOS SDK.
  */
 class RealTimeClient(
     private val context: Context,
@@ -77,6 +92,17 @@ class RealTimeClient(
 ) {
     private val logger: Logger = config.logger
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
+    init {
+        if (config.verboseTransport) {
+            io.livekit.android.LiveKit.loggingLevel = io.livekit.android.util.LoggingLevel.VERBOSE
+            io.livekit.android.LiveKit.enableWebRTCLogging = true
+            logger.info(
+                "LiveKit verbose transport logging enabled",
+                mapOf("webrtcLogs" to true),
+            )
+        }
+    }
 
     private var sessionManager: RealtimeSessionManager? = null
 
@@ -105,7 +131,67 @@ class RealTimeClient(
     var sessionId: String? = null
         private set
 
-    suspend fun connect(options: ConnectOptions): RealtimeMediaStream {
+    /**
+     * Create a LocalVideoTrack-backed [RealtimeMediaStream] that the caller can
+     * render as a preview and later hand to [connect]. The returned stream
+     * owns its LiveKit [io.livekit.android.room.Room]; the caller is
+     * responsible for disposing it (call [RealtimeMediaStream.dispose] or stop
+     * the tracks manually) when the preview is no longer needed.
+     *
+     * Delegates to the static [RealTimeClient.createLocalVideoStream] so the
+     * preview lifecycle does not depend on any per-instance state of this
+     * client — callers can build a preview before they have decided which
+     * `apiKey` / [RealTimeClient] to use.
+     */
+    @JvmOverloads
+    fun createLocalVideoStream(
+        width: Int,
+        height: Int,
+        facing: FacingMode = FacingMode.FRONT,
+        includeMicrophone: Boolean = false,
+        configuration: RealtimeConfiguration = RealtimeConfiguration(),
+    ): RealtimeMediaStream {
+        val stream = createLocalVideoStream(
+            context = context,
+            width = width,
+            height = height,
+            facing = facing,
+            includeMicrophone = includeMicrophone,
+            configuration = configuration,
+            logger = logger,
+        )
+        _localStreamUpdates.tryEmit(stream)
+        return stream
+    }
+
+    /**
+     * Convenience overload that derives capture dimensions from the model.
+     */
+    @JvmOverloads
+    fun createLocalVideoStream(
+        model: RealtimeModel,
+        facing: FacingMode = FacingMode.FRONT,
+        includeMicrophone: Boolean = false,
+        configuration: RealtimeConfiguration = RealtimeConfiguration(),
+    ): RealtimeMediaStream = createLocalVideoStream(
+        width = model.width,
+        height = model.height,
+        facing = facing,
+        includeMicrophone = includeMicrophone,
+        configuration = configuration,
+    )
+
+    /**
+     * Connect a realtime session. When [localStream] is provided the SDK
+     * publishes its tracks against the Room that owns them. When null, and
+     * [ConnectOptions.publishCamera] is true, the SDK creates an internal
+     * stream and disposes it on [disconnect].
+     */
+    @JvmOverloads
+    suspend fun connect(
+        options: ConnectOptions,
+        localStream: RealtimeMediaStream? = null,
+    ): RealtimeMediaStream {
         disconnect()
 
         val url = buildWebrtcUrl(
@@ -130,7 +216,6 @@ class RealTimeClient(
                 onDiagnostic = { event -> _diagnostics.tryEmit(event) },
                 onLocalStream = { stream ->
                     _localStreamUpdates.tryEmit(stream)
-                    options.onLocalStream?.invoke(stream)
                 },
                 onRemoteStream = { stream ->
                     _remoteStreamUpdates.tryEmit(stream)
@@ -146,7 +231,7 @@ class RealTimeClient(
             ),
         )
         sessionManager = manager
-        return manager.connect()
+        return manager.connect(localStream)
     }
 
     fun disconnect() {
@@ -190,5 +275,53 @@ class RealTimeClient(
     fun release() {
         disconnect()
         scope.cancel()
+    }
+
+    companion object {
+        /**
+         * Stateless preview-track factory. Mirrors iOS's
+         * `LocalVideoTrack.createCameraTrack(...)` so the local preview can be
+         * built before a [RealTimeClient] exists — e.g. while the user is
+         * still typing their API key.
+         */
+        @JvmStatic
+        @JvmOverloads
+        fun createLocalVideoStream(
+            context: android.content.Context,
+            width: Int,
+            height: Int,
+            facing: FacingMode = FacingMode.FRONT,
+            includeMicrophone: Boolean = false,
+            configuration: RealtimeConfiguration = RealtimeConfiguration(),
+            logger: Logger = NoopLogger,
+        ): RealtimeMediaStream = LocalStreamFactory.createCameraStream(
+            context = context,
+            configuration = configuration,
+            width = width,
+            height = height,
+            facing = facing,
+            includeMicrophone = includeMicrophone,
+            logger = logger,
+        )
+
+        /** Convenience overload that derives capture dimensions from the model. */
+        @JvmStatic
+        @JvmOverloads
+        fun createLocalVideoStream(
+            context: android.content.Context,
+            model: RealtimeModel,
+            facing: FacingMode = FacingMode.FRONT,
+            includeMicrophone: Boolean = false,
+            configuration: RealtimeConfiguration = RealtimeConfiguration(),
+            logger: Logger = NoopLogger,
+        ): RealtimeMediaStream = createLocalVideoStream(
+            context = context,
+            width = model.width,
+            height = model.height,
+            facing = facing,
+            includeMicrophone = includeMicrophone,
+            configuration = configuration,
+            logger = logger,
+        )
     }
 }

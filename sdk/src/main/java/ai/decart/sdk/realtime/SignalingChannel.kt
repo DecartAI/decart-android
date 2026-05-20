@@ -59,7 +59,18 @@ internal class SignalingChannel(
     }
 
     fun send(message: ClientMessage): Boolean {
-        val socket = webSocket ?: return false
+        val socket = webSocket
+        if (socket == null) {
+            logger.warn(
+                "Realtime signaling send while disconnected",
+                mapOf("type" to message::class.java.simpleName),
+            )
+            return false
+        }
+        logger.debug(
+            "Realtime signaling send",
+            mapOf("type" to message::class.java.simpleName),
+        )
         return socket.send(SignalingMessageParser.serialize(message))
     }
 
@@ -157,25 +168,76 @@ internal class SignalingChannel(
     }
 
     private fun handleMessage(message: ServerMessage) {
+        logger.debug(
+            "Realtime signaling message",
+            mapOf("type" to message::class.java.simpleName),
+        )
         when (message) {
             is ErrorMessage -> {
+                logger.error(
+                    "Realtime signaling server error",
+                    mapOf("error" to message.error),
+                )
                 val error = Exception(message.error)
                 roomInfoDeferred?.completeExceptionally(error)
                 onError(error, "server")
             }
-            is SetImageAckMessage -> _setImageAckFlow.tryEmit(message)
-            is PromptAckMessage -> _promptAckFlow.tryEmit(message)
-            is GenerationStartedMessage -> onStateChange(ConnectionState.GENERATING)
+            is SetImageAckMessage -> {
+                logger.info(
+                    "Realtime set_image_ack",
+                    mapOf("success" to message.success, "error" to message.error),
+                )
+                _setImageAckFlow.tryEmit(message)
+            }
+            is PromptAckMessage -> {
+                logger.info(
+                    "Realtime prompt_ack",
+                    mapOf("success" to message.success, "error" to message.error),
+                )
+                _promptAckFlow.tryEmit(message)
+            }
+            is GenerationStartedMessage -> {
+                logger.info("Realtime generation_started")
+                onStateChange(ConnectionState.GENERATING)
+            }
             is GenerationTickMessage -> _generationTickFlow.tryEmit(message)
-            is GenerationEndedMessage -> Unit
+            is GenerationEndedMessage -> {
+                logger.info(
+                    "Realtime generation_ended",
+                    mapOf("seconds" to message.seconds, "reason" to message.reason),
+                )
+            }
             is SessionIdMessage -> _sessionIdFlow.tryEmit(message.sessionId)
             is LiveKitRoomInfoMessage -> {
+                logger.info(
+                    "Realtime livekit_room_info",
+                    mapOf(
+                        "url" to message.liveKitUrl,
+                        "room" to message.roomName,
+                        "session" to message.sessionId,
+                    ),
+                )
                 _sessionIdFlow.tryEmit(message.sessionId)
                 _roomInfoFlow.tryEmit(message)
                 roomInfoDeferred?.complete(message)
             }
-            is StatusMessage -> _statusFlow.tryEmit(message)
-            is QueuePositionMessage -> _queuePositionFlow.tryEmit(message)
+            is StatusMessage -> {
+                logger.info(
+                    "Realtime status",
+                    mapOf("status" to message.status),
+                )
+                _statusFlow.tryEmit(message)
+            }
+            is QueuePositionMessage -> {
+                logger.info(
+                    "Realtime queue_position",
+                    mapOf(
+                        "position" to message.queuePosition,
+                        "size" to message.queueSize,
+                    ),
+                )
+                _queuePositionFlow.tryEmit(message)
+            }
             is ReadyMessage,
             is OfferMessage,
             is AnswerMessage,

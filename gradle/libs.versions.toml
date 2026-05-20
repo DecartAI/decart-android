@@ -3,6 +3,7 @@ kotlin = "2.1.0"
 agp = "8.7.3"
 webrtc = "125.6422.04"
 livekit = "2.25.3"
+livekitComposeComponents = "2.3.0"
 okhttp = "4.12.0"
 kotlinx-serialization-json = "1.7.3"
 kotlinx-coroutines = "1.9.0"
@@ -17,6 +18,7 @@ androidxTestExt = "1.2.1"
 [libraries]
 google-webrtc = { group = "io.github.webrtc-sdk", name = "android", version.ref = "webrtc" }
 livekit-android = { group = "io.livekit", name = "livekit-android", version.ref = "livekit" }
+livekit-android-compose-components = { group = "io.livekit", name = "livekit-android-compose-components", version.ref = "livekitComposeComponents" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinx-serialization-json" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "kotlinx-coroutines" }

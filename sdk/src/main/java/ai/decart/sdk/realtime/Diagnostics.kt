@@ -80,6 +80,16 @@ data class VideoStallEvent(
     val durationMs: Long
 )
 
+/** Emitted exactly once per session when the first remote video frame is decoded. */
+data class FirstFrameEvent(
+    /** Time from the LiveKit room connect to first remote frame, in milliseconds. */
+    val timeSinceConnectMs: Double,
+    /** Width of the first decoded frame in pixels, if known. */
+    val width: Int? = null,
+    /** Height of the first decoded frame in pixels, if known. */
+    val height: Int? = null,
+)
+
 /** A single diagnostic event with its name and typed data. */
 sealed class DiagnosticEvent {
     data class PhaseTiming(val data: PhaseTimingEvent) : DiagnosticEvent()
@@ -90,6 +100,7 @@ sealed class DiagnosticEvent {
     data class SelectedCandidatePair(val data: SelectedCandidatePairEvent) : DiagnosticEvent()
     data class Reconnect(val data: ReconnectEvent) : DiagnosticEvent()
     data class VideoStall(val data: VideoStallEvent) : DiagnosticEvent()
+    data class FirstFrame(val data: FirstFrameEvent) : DiagnosticEvent()
 }
 
 /** Callback type for emitting diagnostic events. */

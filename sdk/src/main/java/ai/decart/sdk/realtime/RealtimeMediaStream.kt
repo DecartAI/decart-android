@@ -1,15 +1,42 @@
 package ai.decart.sdk.realtime
 
-import io.livekit.android.room.track.AudioTrack
 import io.livekit.android.room.Room
+import io.livekit.android.room.track.AudioTrack
+import io.livekit.android.room.track.LocalAudioTrack
+import io.livekit.android.room.track.LocalVideoTrack
 import io.livekit.android.room.track.VideoTrack
 
+/**
+ * Local or remote media stream surfaced by the realtime SDK.
+ *
+ * For caller-owned streams (created via [RealTimeClient.createLocalVideoStream])
+ * the [room] is the LiveKit Room that owns the underlying tracks; the same
+ * Room is later reused by the SDK to connect to the realtime session. Call
+ * [dispose] when you are done previewing or after disconnecting.
+ */
 data class RealtimeMediaStream(
     val videoTrack: VideoTrack? = null,
     val audioTrack: AudioTrack? = null,
     val id: String,
     val room: Room? = null,
 ) {
+    /**
+     * Stop capture, dispose tracks and disconnect the owning Room. Safe to
+     * call multiple times; best-effort on each underlying resource.
+     */
+    fun dispose() {
+        (videoTrack as? LocalVideoTrack)?.let { track ->
+            try { track.stopCapture() } catch (_: Exception) {}
+            try { track.stop() } catch (_: Exception) {}
+            try { track.dispose() } catch (_: Exception) {}
+        }
+        (audioTrack as? LocalAudioTrack)?.let { track ->
+            try { track.stop() } catch (_: Exception) {}
+            try { track.dispose() } catch (_: Exception) {}
+        }
+        try { room?.disconnect() } catch (_: Exception) {}
+    }
+
     companion object {
         const val LOCAL_STREAM_ID = "stream-local"
         const val REMOTE_STREAM_ID = "stream-remote"

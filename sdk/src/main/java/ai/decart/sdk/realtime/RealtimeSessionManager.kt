@@ -5,11 +5,19 @@ import ai.decart.sdk.Logger
 import ai.decart.sdk.NoopLogger
 import ai.decart.sdk.RealtimeModel
 import ai.decart.sdk.realtime.livekit.LiveKitMediaChannel
+import ai.decart.sdk.realtime.livekit.LocalStreamFactory
 import android.content.Context
+import io.livekit.android.room.track.LocalAudioTrack
+import io.livekit.android.room.track.LocalVideoTrack
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
 
@@ -43,77 +51,44 @@ internal class RealtimeSessionManager(
     private var mediaChannel: LiveKitMediaChannel? = null
     private var managerState: ConnectionState = ConnectionState.DISCONNECTED
 
+    private var providedLocalStream: RealtimeMediaStream? = null
+    private var sdkOwnedLocalStream: RealtimeMediaStream? = null
+    private val effectiveLocalStream: RealtimeMediaStream?
+        get() = providedLocalStream ?: sdkOwnedLocalStream
+
+    private var reconnectJob: Job? = null
+    private var userInitiatedDisconnect: Boolean = false
+    private var permanentError: Boolean = false
+    private var hasEstablishedSession: Boolean = false
+
     val remoteStreamUpdates: SharedFlow<RealtimeMediaStream>?
         get() = mediaChannel?.remoteStreamUpdates
 
-    suspend fun connect(): RealtimeMediaStream {
+    /**
+     * Connect with an optional caller-provided local stream.
+     *
+     * When [localStream] is non-null, its Room is reused for the LiveKit
+     * connection and the channel does not create or dispose anything. When
+     * null, the SDK falls back to creating its own Room + camera track and
+     * disposing them on [disconnect].
+     */
+    suspend fun connect(localStream: RealtimeMediaStream?): RealtimeMediaStream {
+        userInitiatedDisconnect = false
+        permanentError = false
+        hasEstablishedSession = false
+        providedLocalStream = localStream
+
         emitState(ConnectionState.CONNECTING)
-        val signaling = SignalingChannel(
-            logger = logger,
-            onStateChange = ::emitState,
-            onError = { error, _ ->
-                config.onError(error)
-                emitState(ConnectionState.DISCONNECTED)
-            },
-        )
-        signalingChannel = signaling
 
         val totalStart = System.nanoTime()
-        val media = LiveKitMediaChannel(
-            context = config.context,
-            connectOptions = config.realtimeConfiguration.connection.connectOptions(),
-            roomOptions = config.realtimeConfiguration.roomOptions(),
-            videoConfig = config.realtimeConfiguration.media.video,
-                logger = logger,
-        )
-        mediaChannel = media
-        listenToMedia(media)
-
-        val localStream = if (config.publishCamera) {
-            media.createCameraStream(
-                width = config.model.width,
-                height = config.model.height,
-                facing = config.facing,
-                includeMicrophone = config.publishMicrophone,
-            ).also(config.onLocalStream)
-        } else {
-            null
-        }
-
         try {
-            val wsStart = System.nanoTime()
-            signaling.connect(config.signalingUrl, config.realtimeConfiguration.connection.connectionTimeoutMs)
-            emitPhase(ConnectionPhase.WEBSOCKET, wsStart, success = true)
-            listenToSignaling(signaling)
-
-            val roomInfo = signaling.sendLiveKitJoin(config.realtimeConfiguration.connection.connectionTimeoutMs)
-            config.onSessionId(roomInfo.sessionId)
-
-            val connectStart = System.nanoTime()
-            media.connect(roomInfo)
-            emitPhase(ConnectionPhase.LIVEKIT_CONNECT, connectStart, success = true)
-
-            sendInitialState(signaling)
-
-            if (localStream != null) {
-                val publishStart = System.nanoTime()
-                media.publishLocalTracks(localStream)
-                emitPhase(ConnectionPhase.LIVEKIT_PUBLISH, publishStart, success = true)
-            }
-
+            val remote = runOneConnect(totalStart)
             emitPhase(ConnectionPhase.TOTAL, totalStart, success = true)
-            if (managerState != ConnectionState.GENERATING) {
-                emitState(ConnectionState.CONNECTED)
-            }
-            return media.currentRemoteStream
+            return remote
         } catch (error: Exception) {
             emitPhase(ConnectionPhase.TOTAL, totalStart, success = false, error = error.message)
+            tearDownTransports()
             emitState(ConnectionState.DISCONNECTED)
-            mediaChannel?.disconnect()
-            mediaChannel?.cleanup()
-            mediaChannel = null
-            signalingChannel?.close()
-            signalingChannel = null
             throw error
         }
     }
@@ -130,23 +105,109 @@ internal class RealtimeSessionManager(
     }
 
     fun disconnect() {
-        mediaChannel?.disconnect()
-        mediaChannel?.cleanup()
-        mediaChannel = null
-        signalingChannel?.close()
-        signalingChannel = null
-        scope.cancel()
+        userInitiatedDisconnect = true
+        hasEstablishedSession = false
+        reconnectJob?.cancel()
+        reconnectJob = null
+        tearDownTransports()
+        disposeSdkOwnedLocalStream()
+        providedLocalStream = null
         emitState(ConnectionState.DISCONNECTED)
     }
 
     fun cleanup() {
         disconnect()
+        scope.cancel()
     }
 
     fun isConnected(): Boolean =
         managerState == ConnectionState.CONNECTED || managerState == ConnectionState.GENERATING
 
     fun getConnectionState(): ConnectionState = managerState
+
+    // -------------------------------------------------------------------------
+    // Connect / reconnect implementation
+    // -------------------------------------------------------------------------
+
+    private suspend fun runOneConnect(totalStart: Long): RealtimeMediaStream {
+        val signaling = SignalingChannel(
+            logger = logger,
+            onStateChange = ::emitState,
+            onError = ::handleSignalingError,
+        )
+        signalingChannel = signaling
+
+        val media = LiveKitMediaChannel(
+            context = config.context,
+            connectOptions = config.realtimeConfiguration.connection.connectOptions(),
+            roomOptions = config.realtimeConfiguration.roomOptions(),
+            videoConfig = config.realtimeConfiguration.media.video,
+            logger = logger,
+        )
+        mediaChannel = media
+        listenToMedia(media)
+
+        // Ensure we have a local stream to publish.
+        val localStream = ensureLocalStream()
+
+        val wsStart = System.nanoTime()
+        signaling.connect(
+            config.signalingUrl,
+            config.realtimeConfiguration.connection.connectionTimeoutMs,
+        )
+        emitPhase(ConnectionPhase.WEBSOCKET, wsStart, success = true)
+        listenToSignaling(signaling)
+
+        val roomInfo = signaling.sendLiveKitJoin(
+            config.realtimeConfiguration.connection.connectionTimeoutMs,
+        )
+        config.onSessionId(roomInfo.sessionId)
+
+        // Mirror JS stream-session.ts: run the initial-state ack and the
+        // LiveKit Room connect in parallel, then publish local tracks only
+        // after both have resolved.
+        val connectStart = System.nanoTime()
+        coroutineScope {
+            val initialStateAck = async { sendInitialState(signaling) }
+            val mediaConnect = async {
+                media.connect(roomInfo, localStream?.room)
+                emitPhase(ConnectionPhase.LIVEKIT_CONNECT, connectStart, success = true)
+            }
+            awaitAll(initialStateAck, mediaConnect)
+        }
+
+        if (localStream != null) {
+            val publishStart = System.nanoTime()
+            media.publishLocalTracks(localStream)
+            emitPhase(ConnectionPhase.LIVEKIT_PUBLISH, publishStart, success = true)
+        }
+
+        if (managerState != ConnectionState.GENERATING) {
+            emitState(ConnectionState.CONNECTED)
+        }
+        hasEstablishedSession = true
+        return media.currentRemoteStream
+    }
+
+    private fun ensureLocalStream(): RealtimeMediaStream? {
+        providedLocalStream?.let {
+            return it
+        }
+        if (!config.publishCamera) return null
+
+        val stream = LocalStreamFactory.createCameraStream(
+            context = config.context,
+            configuration = config.realtimeConfiguration,
+            width = config.model.width,
+            height = config.model.height,
+            facing = config.facing,
+            includeMicrophone = config.publishMicrophone,
+            logger = logger,
+        )
+        sdkOwnedLocalStream = stream
+        config.onLocalStream(stream)
+        return stream
+    }
 
     private suspend fun sendInitialState(signaling: SignalingChannel) {
         val timeoutMs = config.realtimeConfiguration.connection.connectionTimeoutMs
@@ -196,8 +257,159 @@ internal class RealtimeSessionManager(
         scope.launch {
             media.disconnectUpdates.collect { info ->
                 info.reason?.let { logger.warn("LiveKit disconnected", mapOf("reason" to it)) }
+                handleUnexpectedDisconnect(info.reason)
             }
         }
+        scope.launch {
+            media.firstFrameEvents.collect { event ->
+                logger.info(
+                    "Realtime first frame",
+                    mapOf(
+                        "ms" to event.timeSinceConnectMs,
+                        "width" to event.width,
+                        "height" to event.height,
+                    ),
+                )
+                config.onDiagnostic?.invoke(
+                    DiagnosticEvent.FirstFrame(
+                        FirstFrameEvent(
+                            timeSinceConnectMs = event.timeSinceConnectMs,
+                            width = event.width,
+                            height = event.height,
+                        ),
+                    ),
+                )
+                if (managerState == ConnectionState.CONNECTED) {
+                    emitState(ConnectionState.GENERATING)
+                }
+            }
+        }
+    }
+
+    private fun handleSignalingError(error: Exception, source: String?) {
+        config.onError(error)
+        if (RealtimeRetryPolicy.isPermanentError(error.message)) {
+            permanentError = true
+            logger.error(
+                "Permanent signaling error, will not reconnect",
+                mapOf("error" to error.message, "source" to source),
+            )
+            emitState(ConnectionState.DISCONNECTED)
+            return
+        }
+        // Transient signaling error during steady state — schedule reconnect.
+        if (managerState == ConnectionState.CONNECTED || managerState == ConnectionState.GENERATING) {
+            handleUnexpectedDisconnect(error.message)
+        } else {
+            emitState(ConnectionState.DISCONNECTED)
+        }
+    }
+
+    private fun handleUnexpectedDisconnect(reason: String?) {
+        if (userInitiatedDisconnect || permanentError) return
+        val shouldRetry = managerState == ConnectionState.CONNECTED ||
+                managerState == ConnectionState.GENERATING ||
+                hasEstablishedSession
+        if (!shouldRetry) {
+            return
+        }
+        scheduleReconnect(reason)
+    }
+
+    private fun scheduleReconnect(reason: String?) {
+        if (reconnectJob?.isActive == true) return
+        emitState(ConnectionState.RECONNECTING)
+        reconnectJob = scope.launch {
+            var attempt = 0
+            while (attempt < RealtimeRetryPolicy.MAX_ATTEMPTS && !userInitiatedDisconnect && !permanentError) {
+                val delayMs = RealtimeRetryPolicy.delayMsFor(attempt)
+                logger.warn(
+                    "Realtime reconnect: scheduling attempt",
+                    mapOf("attempt" to attempt + 1, "delayMs" to delayMs, "reason" to reason),
+                )
+                delay(delayMs)
+                if (userInitiatedDisconnect || permanentError) return@launch
+
+                tearDownTransports()
+                resetLocalStreamForFreshLiveKitRoom()
+                val start = System.nanoTime()
+                try {
+                    runOneConnect(start)
+                    config.onDiagnostic?.invoke(
+                        DiagnosticEvent.Reconnect(
+                            ReconnectEvent(
+                                attempt = attempt + 1,
+                                maxAttempts = RealtimeRetryPolicy.MAX_ATTEMPTS,
+                                durationMs = (System.nanoTime() - start) / 1_000_000.0,
+                                success = true,
+                            ),
+                        ),
+                    )
+                    logger.info("Realtime reconnect: succeeded", mapOf("attempt" to attempt + 1))
+                    return@launch
+                } catch (error: Exception) {
+                    attempt += 1
+                    config.onDiagnostic?.invoke(
+                        DiagnosticEvent.Reconnect(
+                            ReconnectEvent(
+                                attempt = attempt,
+                                maxAttempts = RealtimeRetryPolicy.MAX_ATTEMPTS,
+                                durationMs = (System.nanoTime() - start) / 1_000_000.0,
+                                success = false,
+                                error = error.message,
+                            ),
+                        ),
+                    )
+                    if (RealtimeRetryPolicy.isPermanentError(error.message)) {
+                        permanentError = true
+                        logger.error(
+                            "Realtime reconnect: permanent error, stopping",
+                            mapOf("error" to error.message),
+                        )
+                        break
+                    }
+                    logger.warn(
+                        "Realtime reconnect: attempt failed",
+                        mapOf("attempt" to attempt, "error" to error.message),
+                    )
+                }
+            }
+            hasEstablishedSession = false
+            emitState(ConnectionState.DISCONNECTED)
+        }
+    }
+
+    private fun tearDownTransports() {
+        mediaChannel?.disconnect()
+        mediaChannel?.cleanup()
+        mediaChannel = null
+        signalingChannel?.close()
+        signalingChannel = null
+    }
+
+    private fun resetLocalStreamForFreshLiveKitRoom() {
+        if (providedLocalStream != null || sdkOwnedLocalStream != null) {
+            logger.info("Realtime reconnect: replacing local LiveKit stream")
+        }
+        providedLocalStream = null
+        disposeSdkOwnedLocalStream()
+    }
+
+    private fun disposeSdkOwnedLocalStream() {
+        val stream = sdkOwnedLocalStream ?: return
+        sdkOwnedLocalStream = null
+        (stream.videoTrack as? LocalVideoTrack)?.let { track ->
+            try { track.stopCapture() } catch (_: Exception) {}
+            try { track.stop() } catch (_: Exception) {}
+            try { track.dispose() } catch (_: Exception) {}
+        }
+        (stream.audioTrack as? LocalAudioTrack)?.let { track ->
+            try { track.stop() } catch (_: Exception) {}
+            try { track.dispose() } catch (_: Exception) {}
+        }
+        // The Room we created here is throwaway; disconnect it so its
+        // EglBase / PeerConnectionFactory are freed.
+        try { stream.room?.disconnect() } catch (_: Exception) {}
     }
 
     private fun emitState(state: ConnectionState) {
