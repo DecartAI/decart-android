@@ -59,9 +59,11 @@ internal suspend fun awaitAck(
     // OkHttp threads and iterates jobs.forEach — exposing an incomplete list
     // would race with this thread's additions.
     register(failHook)
-    // If a UNDISPATCHED listener already ran synchronously (buffered ack) and
-    // resumed cont before register, the hook would otherwise leak — clean up.
+    // If a UNDISPATCHED listener already ran synchronously (buffered ack, or
+    // timeoutMs <= 0) and resumed cont before register, the hook and any
+    // pending jobs would otherwise leak — clean up.
     if (!cont.isActive) {
+        jobs.forEach { it.cancel() }
         unregister(failHook)
         return@suspendCancellableCoroutine
     }
