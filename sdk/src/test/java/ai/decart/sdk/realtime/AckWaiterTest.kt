@@ -16,45 +16,83 @@ import org.junit.Test
 
 class AckWaiterTest {
 
+    private class StubRegistry {
+        val hooks = mutableListOf<(Throwable) -> Unit>()
+        val register: ((Throwable) -> Unit) -> Unit = { hooks.add(it) }
+        val unregister: ((Throwable) -> Unit) -> Unit = { hooks.remove(it) }
+    }
+
     @Test
     fun `resolves successfully when ack reports success`() = runTest(UnconfinedTestDispatcher()) {
         val ackFlow = MutableSharedFlow<AckResult>(extraBufferCapacity = 4)
-        val failureFlow = MutableSharedFlow<Exception>(extraBufferCapacity = 4)
+        val registry = StubRegistry()
         var sendInvoked = false
 
         val job = async {
-            awaitAckWithFailureRace(
+            awaitAck(
                 scope = this@runTest,
                 timeoutMs = 10_000,
                 timeoutMessage = "timeout",
                 ackFailureMessage = "failed",
-                failureFlow = failureFlow,
+                register = registry.register,
+                unregister = registry.unregister,
                 awaitMatchingAck = { ackFlow.first() },
                 send = { sendInvoked = true; true }
             )
         }
-
         runCurrent()
-        assertTrue("send must be invoked synchronously after subscribers are armed", sendInvoked)
+
+        assertTrue("send must run after subscribers are armed", sendInvoked)
+        assertEquals(1, registry.hooks.size)
         assertFalse(job.isCompleted)
 
         ackFlow.tryEmit(AckResult(success = true, error = null))
-        job.await() // resumes Unit
+        job.await()
+        assertTrue("waiter must be unregistered on success", registry.hooks.isEmpty())
+    }
+
+    @Test
+    fun `ack subscriber is armed before send runs`() = runTest(UnconfinedTestDispatcher()) {
+        // Verifies the UNDISPATCHED contract: an ack that arrives during the
+        // send call must be delivered to the listener.
+        val ackFlow = MutableSharedFlow<AckResult>(extraBufferCapacity = 4)
+        val registry = StubRegistry()
+
+        val job = async {
+            awaitAck(
+                scope = this@runTest,
+                timeoutMs = 10_000,
+                timeoutMessage = "timeout",
+                ackFailureMessage = "failed",
+                register = registry.register,
+                unregister = registry.unregister,
+                awaitMatchingAck = { ackFlow.first() },
+                send = {
+                    // Simulates an ack racing on the same thread before send returns.
+                    ackFlow.tryEmit(AckResult(success = true, error = null))
+                    true
+                }
+            )
+        }
+        runCurrent()
+
+        job.await()
     }
 
     @Test
     fun `throws ack error when ack reports failure`() = runTest(UnconfinedTestDispatcher()) {
         val ackFlow = MutableSharedFlow<AckResult>(extraBufferCapacity = 4)
-        val failureFlow = MutableSharedFlow<Exception>(extraBufferCapacity = 4)
+        val registry = StubRegistry()
 
         val job = async {
             runCatching {
-                awaitAckWithFailureRace(
+                awaitAck(
                     scope = this@runTest,
                     timeoutMs = 10_000,
                     timeoutMessage = "timeout",
                     ackFailureMessage = "default-failure",
-                    failureFlow = failureFlow,
+                    register = registry.register,
+                    unregister = registry.unregister,
                     awaitMatchingAck = { ackFlow.first() },
                     send = { true }
                 )
@@ -67,21 +105,23 @@ class AckWaiterTest {
 
         assertTrue(result.isFailure)
         assertEquals("moderation rejected", result.exceptionOrNull()?.message)
+        assertTrue(registry.hooks.isEmpty())
     }
 
     @Test
     fun `throws default error when failed ack has no error message`() = runTest(UnconfinedTestDispatcher()) {
         val ackFlow = MutableSharedFlow<AckResult>(extraBufferCapacity = 4)
-        val failureFlow = MutableSharedFlow<Exception>(extraBufferCapacity = 4)
+        val registry = StubRegistry()
 
         val job = async {
             runCatching {
-                awaitAckWithFailureRace(
+                awaitAck(
                     scope = this@runTest,
                     timeoutMs = 10_000,
                     timeoutMessage = "timeout",
                     ackFailureMessage = "default-failure",
-                    failureFlow = failureFlow,
+                    register = registry.register,
+                    unregister = registry.unregister,
                     awaitMatchingAck = { ackFlow.first() },
                     send = { true }
                 )
@@ -100,16 +140,17 @@ class AckWaiterTest {
     fun `awaitMatchingAck predicate filters out non-matching acks`() = runTest(UnconfinedTestDispatcher()) {
         data class PromptAck(val prompt: String, val success: Boolean, val error: String?)
         val ackFlow = MutableSharedFlow<PromptAck>(extraBufferCapacity = 4)
-        val failureFlow = MutableSharedFlow<Exception>(extraBufferCapacity = 4)
+        val registry = StubRegistry()
         val target = "match-me"
 
         val job = async {
-            awaitAckWithFailureRace(
+            awaitAck(
                 scope = this@runTest,
                 timeoutMs = 10_000,
                 timeoutMessage = "timeout",
                 ackFailureMessage = "failed",
-                failureFlow = failureFlow,
+                register = registry.register,
+                unregister = registry.unregister,
                 awaitMatchingAck = {
                     val a = ackFlow.first { it.prompt == target }
                     AckResult(success = a.success, error = a.error)
@@ -130,16 +171,17 @@ class AckWaiterTest {
     @Test
     fun `throws timeout exception when no ack arrives in time`() = runTest(UnconfinedTestDispatcher()) {
         val ackFlow = MutableSharedFlow<AckResult>(extraBufferCapacity = 4)
-        val failureFlow = MutableSharedFlow<Exception>(extraBufferCapacity = 4)
+        val registry = StubRegistry()
 
         val job = async {
             runCatching {
-                awaitAckWithFailureRace(
+                awaitAck(
                     scope = this@runTest,
                     timeoutMs = 5_000,
                     timeoutMessage = "Prompt send timed out",
                     ackFailureMessage = "failed",
-                    failureFlow = failureFlow,
+                    register = registry.register,
+                    unregister = registry.unregister,
                     awaitMatchingAck = { ackFlow.first() },
                     send = { true }
                 )
@@ -156,20 +198,22 @@ class AckWaiterTest {
 
         assertTrue(result.isFailure)
         assertEquals("Prompt send timed out", result.exceptionOrNull()?.message)
+        assertTrue(registry.hooks.isEmpty())
     }
 
     @Test
     fun `throws WebSocket-is-not-open when send returns false`() = runTest(UnconfinedTestDispatcher()) {
         val ackFlow = MutableSharedFlow<AckResult>(extraBufferCapacity = 4)
-        val failureFlow = MutableSharedFlow<Exception>(extraBufferCapacity = 4)
+        val registry = StubRegistry()
 
         val result = runCatching {
-            awaitAckWithFailureRace(
+            awaitAck(
                 scope = this@runTest,
                 timeoutMs = 10_000,
                 timeoutMessage = "timeout",
                 ackFailureMessage = "failed",
-                failureFlow = failureFlow,
+                register = registry.register,
+                unregister = registry.unregister,
                 awaitMatchingAck = { ackFlow.first() },
                 send = { false }
             )
@@ -177,21 +221,25 @@ class AckWaiterTest {
 
         assertTrue(result.isFailure)
         assertEquals("WebSocket is not open", result.exceptionOrNull()?.message)
+        assertTrue(registry.hooks.isEmpty())
     }
 
     @Test
-    fun `propagates failure when failureFlow emits before ack`() = runTest(UnconfinedTestDispatcher()) {
+    fun `external failure hook fails the wait and cancels child jobs`() = runTest(UnconfinedTestDispatcher()) {
+        // Simulates resolvePendingWaits walking the registry on websocket
+        // close / server error and invoking each waiter's fail hook.
         val ackFlow = MutableSharedFlow<AckResult>(extraBufferCapacity = 4)
-        val failureFlow = MutableSharedFlow<Exception>(extraBufferCapacity = 4)
+        val registry = StubRegistry()
 
         val job = async {
             runCatching {
-                awaitAckWithFailureRace(
+                awaitAck(
                     scope = this@runTest,
                     timeoutMs = 10_000,
                     timeoutMessage = "timeout",
                     ackFailureMessage = "failed",
-                    failureFlow = failureFlow,
+                    register = registry.register,
+                    unregister = registry.unregister,
                     awaitMatchingAck = { ackFlow.first() },
                     send = { true }
                 )
@@ -199,26 +247,29 @@ class AckWaiterTest {
         }
         runCurrent()
 
-        failureFlow.tryEmit(Exception("WebSocket closed"))
+        assertEquals(1, registry.hooks.size)
+        registry.hooks[0].invoke(Exception("WebSocket closed"))
         val result = job.await()
 
         assertTrue(result.isFailure)
         assertEquals("WebSocket closed", result.exceptionOrNull()?.message)
+        assertTrue("fail hook must be unregistered", registry.hooks.isEmpty())
     }
 
     @Test
     fun `late ack arrival after timeout is ignored without leak`() = runTest(UnconfinedTestDispatcher()) {
         val ackFlow = MutableSharedFlow<AckResult>(extraBufferCapacity = 4)
-        val failureFlow = MutableSharedFlow<Exception>(extraBufferCapacity = 4)
+        val registry = StubRegistry()
 
         val job = async {
             runCatching {
-                awaitAckWithFailureRace(
+                awaitAck(
                     scope = this@runTest,
                     timeoutMs = 100,
                     timeoutMessage = "timeout",
                     ackFailureMessage = "failed",
-                    failureFlow = failureFlow,
+                    register = registry.register,
+                    unregister = registry.unregister,
                     awaitMatchingAck = { ackFlow.first() },
                     send = { true }
                 )
@@ -229,8 +280,8 @@ class AckWaiterTest {
         val result = job.await()
         assertTrue(result.isFailure)
         assertEquals("timeout", result.exceptionOrNull()?.message)
+        assertTrue(registry.hooks.isEmpty())
 
-        // Late ack must not throw or affect state.
         ackFlow.tryEmit(AckResult(success = true, error = null))
         runCurrent()
     }

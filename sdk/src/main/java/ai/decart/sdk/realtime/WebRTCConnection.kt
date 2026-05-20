@@ -65,15 +65,31 @@ class WebRTCConnection(private val callbacks: ConnectionCallbacks = ConnectionCa
     private val _sessionIdFlow = MutableSharedFlow<SessionIdMessage>(extraBufferCapacity = 10)
     private val _generationTickFlow = MutableSharedFlow<GenerationTickMessage>(extraBufferCapacity = 10)
 
-    private val _pendingWaitsFailure = MutableSharedFlow<Exception>(extraBufferCapacity = 16)
-
     val promptAckFlow: SharedFlow<PromptAckMessage> = _promptAckFlow
     val setImageAckFlow: SharedFlow<SetImageAckMessage> = _setImageAckFlow
     val sessionIdFlow: SharedFlow<SessionIdMessage> = _sessionIdFlow
     val generationTickFlow: SharedFlow<GenerationTickMessage> = _generationTickFlow
 
+    // Fail callbacks from in-flight ack waiters. Invoked synchronously from
+    // websocket failure / server error / cleanup paths so callers don't hang
+    // when the scope's children are cancelled in the same call.
+    private val pendingFailHooks = mutableSetOf<(Throwable) -> Unit>()
+
+    private fun registerFailHook(hook: (Throwable) -> Unit) {
+        synchronized(pendingFailHooks) { pendingFailHooks.add(hook) }
+    }
+
+    private fun unregisterFailHook(hook: (Throwable) -> Unit) {
+        synchronized(pendingFailHooks) { pendingFailHooks.remove(hook) }
+    }
+
     private fun resolvePendingWaits(error: Exception) {
-        _pendingWaitsFailure.tryEmit(error)
+        val hooks: List<(Throwable) -> Unit>
+        synchronized(pendingFailHooks) {
+            hooks = pendingFailHooks.toList()
+            pendingFailHooks.clear()
+        }
+        for (hook in hooks) hook(error)
     }
 
     private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -490,12 +506,13 @@ class WebRTCConnection(private val callbacks: ConnectionCallbacks = ConnectionCa
             prompt = if (options.prompt != null || imageBase64 == null) options.prompt else null,
             enhancePrompt = options.enhance
         )
-        awaitAckWithFailureRace(
+        awaitAck(
             scope = coroutineScope,
             timeoutMs = options.timeout,
             timeoutMessage = "Image send timed out",
             ackFailureMessage = "Failed to send image",
-            failureFlow = _pendingWaitsFailure,
+            register = ::registerFailHook,
+            unregister = ::unregisterFailHook,
             awaitMatchingAck = {
                 val ack = _setImageAckFlow.first()
                 AckResult(success = ack.success, error = ack.error)
@@ -509,12 +526,13 @@ class WebRTCConnection(private val callbacks: ConnectionCallbacks = ConnectionCa
         enhance: Boolean,
         timeoutMs: Long = PROMPT_TIMEOUT_MS,
     ) {
-        awaitAckWithFailureRace(
+        awaitAck(
             scope = coroutineScope,
             timeoutMs = timeoutMs,
             timeoutMessage = "Prompt send timed out",
             ackFailureMessage = "Failed to send prompt",
-            failureFlow = _pendingWaitsFailure,
+            register = ::registerFailHook,
+            unregister = ::unregisterFailHook,
             awaitMatchingAck = {
                 val ack = _promptAckFlow.first { it.prompt == prompt }
                 AckResult(success = ack.success, error = ack.error)
@@ -524,12 +542,13 @@ class WebRTCConnection(private val callbacks: ConnectionCallbacks = ConnectionCa
     }
 
     private suspend fun sendInitialPrompt(prompt: InitialPrompt) {
-        awaitAckWithFailureRace(
+        awaitAck(
             scope = coroutineScope,
             timeoutMs = AVATAR_SETUP_TIMEOUT_MS,
             timeoutMessage = "Prompt send timed out",
             ackFailureMessage = "Failed to send prompt",
-            failureFlow = _pendingWaitsFailure,
+            register = ::registerFailHook,
+            unregister = ::unregisterFailHook,
             awaitMatchingAck = {
                 val ack = _promptAckFlow.first { it.prompt == prompt.text }
                 AckResult(success = ack.success, error = ack.error)
