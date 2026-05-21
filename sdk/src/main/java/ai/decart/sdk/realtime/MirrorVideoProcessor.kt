@@ -12,22 +12,14 @@ import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * A [VideoProcessor] that mirrors every captured frame across its displayed
- * horizontal axis before it reaches the [org.webrtc.VideoSource]. Attach it
- * via [org.webrtc.VideoSource.setVideoProcessor] before passing the resulting
- * [org.webrtc.VideoTrack] to [RealTimeClient.connect].
+ * Mirrors every captured frame across its displayed horizontal axis before
+ * it reaches the [org.webrtc.VideoSource]. Texture-backed frames are
+ * flipped via matrix composition (no pixel copy); non-texture frames fall
+ * back to a software flip via [JavaI420Buffer].
  *
- * The flip axis in *buffer* space depends on `frame.rotation`, since the renderer
- * applies that rotation downstream. For portrait-mode cameras (rotation 90/270),
- * a display-horizontal mirror corresponds to a vertical flip of the unrotated
- * buffer; for 0/180 it's a buffer-horizontal flip.
- *
- * For texture-backed frames (the common case for [org.webrtc.Camera2Enumerator])
- * the flip is a metadata-only matrix composition — no pixel copy, no per-frame
- * GPU work. For non-texture frames the processor falls back to a software flip
- * via [JavaI420Buffer].
- *
- * The processor is stateless and reusable across sources.
+ * Note: the flip axis in *buffer* space depends on `frame.rotation`. For
+ * 90/270 (portrait cameras) a display-horizontal mirror is a buffer-vertical
+ * flip; for 0/180 it's a buffer-horizontal flip.
  */
 class MirrorVideoProcessor(private val logger: Logger = NoopLogger) : VideoProcessor {
 
@@ -73,8 +65,7 @@ class MirrorVideoProcessor(private val logger: Logger = NoopLogger) : VideoProce
                 VideoFrame(newBuffer, frame.rotation, frame.timestampNs)
             }.getOrNull()
             if (textureFrame != null) return textureFrame
-            // Texture matrix failed — fall through to the I420 software path so the
-            // mirror invariant is preserved whenever readback is physically possible.
+            // Texture path failed; fall through to the I420 software flip.
         }
         return runCatching {
             val i420 = buffer.toI420() ?: return@runCatching null
@@ -88,10 +79,6 @@ class MirrorVideoProcessor(private val logger: Logger = NoopLogger) : VideoProce
     }
 
     companion object {
-        /**
-         * Rotation values of 90 and 270 (modulo 360) lay the buffer out perpendicular
-         * to the displayed axis, so a display-horizontal mirror is a buffer-vertical flip.
-         */
         internal fun isPerpendicularRotation(rotationDegrees: Int): Boolean {
             val normalized = ((rotationDegrees % 360) + 360) % 360
             return normalized % 180 != 0

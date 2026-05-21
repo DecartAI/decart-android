@@ -9,15 +9,20 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 
 internal data class AckResult(val success: Boolean, val error: String?)
 
-// Two correctness notes:
-// - UNDISPATCHED start makes the listener subscribe to its SharedFlow before
-//   `send()` runs. Without it, a fast ack on a non-replaying flow can be
-//   delivered before the collector exists and get dropped (false timeout).
-// - The caller-provided [register] hook gets a fail callback that the
-//   external failure paths (websocket close, server error, cleanup) can
-//   invoke synchronously. The callback routes through `resolve()` so the
-//   helper's own child jobs are cancelled, avoiding leaks across cleanup +
-//   cancelChildren on a single-threaded dispatcher.
+/**
+ * Suspends until a matching ack arrives, the timeout elapses, an external
+ * failure ([register] hook fires), or [send] fails.
+ *
+ * The non-obvious bits:
+ *  - Both jobs use [CoroutineStart.UNDISPATCHED] so the listener subscribes
+ *    before [send] runs. A fast ack on a non-replaying flow would
+ *    otherwise be dropped, producing a false timeout.
+ *  - [register] runs after the jobs list is populated. The fail-hook can
+ *    fire from background OkHttp threads and iterates `jobs`.
+ *  - The post-register liveness check covers an UNDISPATCHED listener that
+ *    resolved synchronously before [register] could run; without it the
+ *    fail-hook leaks until cleanup.
+ */
 internal suspend fun awaitAck(
     scope: CoroutineScope,
     timeoutMs: Long,
@@ -56,12 +61,12 @@ internal suspend fun awaitAck(
     }
 
     // Register only after jobs is fully populated. The failure path runs on
-    // OkHttp threads and iterates jobs.forEach — exposing an incomplete list
+    // OkHttp threads and iterates jobs.forEach; exposing an incomplete list
     // would race with this thread's additions.
     register(failHook)
     // If a UNDISPATCHED listener already ran synchronously (buffered ack, or
     // timeoutMs <= 0) and resumed cont before register, the hook and any
-    // pending jobs would otherwise leak — clean up.
+    // pending jobs would otherwise leak.
     if (!cont.isActive) {
         jobs.forEach { it.cancel() }
         unregister(failHook)

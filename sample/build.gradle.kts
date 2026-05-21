@@ -45,6 +45,7 @@ android {
 dependencies {
     implementation(project(":sdk"))
     implementation(libs.google.webrtc)
+    implementation(libs.livekit.android.compose.components)
 
     // Compose
     implementation(platform(libs.compose.bom))

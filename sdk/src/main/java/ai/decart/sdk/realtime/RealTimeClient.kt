@@ -1,38 +1,53 @@
 package ai.decart.sdk.realtime
 
-import ai.decart.sdk.*
+import ai.decart.sdk.ConnectionState
+import ai.decart.sdk.DecartError
+import ai.decart.sdk.ErrorClassifier
+import ai.decart.sdk.Logger
+import ai.decart.sdk.NoopLogger
+import ai.decart.sdk.RealtimeModel
+import ai.decart.sdk.realtime.livekit.LocalStreamFactory
 import android.content.Context
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.*
-import org.webrtc.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
-/**
- * Configuration for creating a [RealTimeClient].
- */
 data class RealTimeClientConfig(
     val apiKey: String,
     val baseUrl: String = "wss://api.decart.ai",
-    val logger: Logger = NoopLogger
+    val logger: Logger = NoopLogger,
 )
 
-/**
- * Output resolution for a realtime session. Defaults to 720p server-side when unset.
- */
+/** Server-side output resolution. Defaults to 720p when unset. */
 enum class Resolution(val value: String) {
     P720("720p"),
     P1080("1080p"),
 }
 
 /**
- * Options for connecting to a realtime model.
+ * Prefer creating a local stream with [RealTimeClient.createLocalVideoStream]
+ * and passing it in, so preview and publish share a single LiveKit Room.
+ * If [localStream] is null and [publishCamera] is true the SDK opens one
+ * internally and disposes it on disconnect.
  */
 data class ConnectOptions @JvmOverloads constructor(
     val model: RealtimeModel,
-    val onRemoteVideoTrack: (VideoTrack) -> Unit,
-    val onRemoteAudioTrack: ((AudioTrack) -> Unit)? = null,
     val initialPrompt: InitialPrompt? = null,
     val initialImage: String? = null,
     val resolution: Resolution? = null,
+    val realtimeConfiguration: RealtimeConfiguration = RealtimeConfiguration(),
+    val publishCamera: Boolean = true,
+    val publishMicrophone: Boolean = false,
+    val facing: FacingMode = FacingMode.FRONT,
+    val onRemoteStream: ((RealtimeMediaStream) -> Unit)? = null,
 )
 
 internal fun buildWebrtcUrl(
@@ -50,64 +65,26 @@ internal fun buildWebrtcUrl(
 }
 
 /**
- * Holder for a camera-driven [VideoTrack] produced by [RealTimeClient.createCameraVideoTrack].
- * Call [stop] when finished — typically on disconnect — to release the capturer, source,
- * track, and texture helper in the correct order.
- */
-class CameraVideoTrack internal constructor(
-    val track: VideoTrack,
-    val source: VideoSource,
-    val capturer: VideoCapturer,
-    val surfaceTextureHelper: SurfaceTextureHelper,
-) {
-    private val stopped = java.util.concurrent.atomic.AtomicBoolean(false)
-
-    fun stop() {
-        if (!stopped.compareAndSet(false, true)) return
-        try { capturer.stopCapture() } catch (_: Exception) {}
-        capturer.dispose()
-        track.dispose()
-        source.dispose()
-        surfaceTextureHelper.dispose()
-    }
-}
-
-/**
- * The main entry point for the Decart Realtime SDK.
- *
- * Usage:
- * ```kotlin
- * val client = RealTimeClient(context, RealTimeClientConfig(apiKey = "..."))
- * client.connect(ConnectOptions(
- *     model = RealtimeModels.LUCY_RESTYLE_2,
- *     onRemoteVideoTrack = { track -> renderer.addSink(track) }
- * ))
- *
- * // Change the prompt during a session (suspend)
- * scope.launch { client.setPrompt("a cyberpunk cityscape") }
- *
- * // Observe state changes
- * client.connectionState.collect { state -> ... }
- *
- * // Disconnect
- * client.disconnect()
- * ```
+ * Entry point for Decart realtime sessions. WebSocket signaling is
+ * Decart-owned; media is transported through a LiveKit room returned by
+ * the signaling handshake.
  */
 class RealTimeClient(
     private val context: Context,
-    private val config: RealTimeClientConfig
+    private val config: RealTimeClientConfig,
 ) {
     private val logger: Logger = config.logger
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
-    // PeerConnectionFactory -- created once, reused across connections
-    private var peerConnectionFactory: PeerConnectionFactory? = null
-    private var eglBase: EglBase? = null
+    init {
+        // Silence LiveKit's internal logger and the libwebrtc native logger;
+        // events surface through the injected [Logger] and [diagnostics] only.
+        io.livekit.android.LiveKit.loggingLevel = io.livekit.android.util.LoggingLevel.OFF
+        io.livekit.android.LiveKit.enableWebRTCLogging = false
+    }
 
-    private var webrtcManager: WebRTCManager? = null
-    private var statsCollector: WebRTCStatsCollector? = null
+    private var sessionManager: RealtimeSessionManager? = null
 
-    // Public state flows
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
@@ -117,61 +94,78 @@ class RealTimeClient(
     private val _generationTicks = MutableSharedFlow<GenerationTickMessage>(extraBufferCapacity = 10)
     val generationTicks: SharedFlow<GenerationTickMessage> = _generationTicks.asSharedFlow()
 
+    private val _generationEnded = MutableSharedFlow<GenerationEndedMessage>(extraBufferCapacity = 10)
+    val generationEnded: SharedFlow<GenerationEndedMessage> = _generationEnded.asSharedFlow()
+
+    private val _queuePositionUpdates = MutableSharedFlow<QueuePositionMessage>(replay = 1, extraBufferCapacity = 10)
+    val queuePositionUpdates: SharedFlow<QueuePositionMessage> = _queuePositionUpdates.asSharedFlow()
+
     private val _diagnostics = MutableSharedFlow<DiagnosticEvent>(extraBufferCapacity = 50)
     val diagnostics: SharedFlow<DiagnosticEvent> = _diagnostics.asSharedFlow()
 
-    private val _stats = MutableSharedFlow<WebRTCStats>(extraBufferCapacity = 10)
-    val stats: SharedFlow<WebRTCStats> = _stats.asSharedFlow()
+    private val _remoteStreamUpdates = MutableSharedFlow<RealtimeMediaStream>(replay = 1, extraBufferCapacity = 10)
+    val remoteStreamUpdates: SharedFlow<RealtimeMediaStream> = _remoteStreamUpdates.asSharedFlow()
 
-    // Session info
-    var sessionId: String? = null
-        private set
+    private val _localStreamUpdates = MutableSharedFlow<RealtimeMediaStream>(replay = 1, extraBufferCapacity = 10)
+    val localStreamUpdates: SharedFlow<RealtimeMediaStream> = _localStreamUpdates.asSharedFlow()
+
+    private val _sessionStarted = MutableStateFlow<SessionStarted?>(null)
+    val sessionStarted: StateFlow<SessionStarted?> = _sessionStarted.asStateFlow()
+
+    val sessionId: String?
+        get() = _sessionStarted.value?.sessionId
+
+    val subscribeToken: String?
+        get() = _sessionStarted.value?.subscribeToken
 
     /**
-     * Initialize the WebRTC peer connection factory.
-     * Call this once, typically in Application.onCreate() or before first connect.
-     * If not called explicitly, connect() will call it automatically.
+     * Build a preview-ready [RealtimeMediaStream]. The caller owns the
+     * returned stream's LiveKit Room and must [RealtimeMediaStream.dispose]
+     * it. Delegates to the static factory so preview can be built before
+     * a [RealTimeClient] exists.
      */
-    fun initialize(eglBase: EglBase? = null) {
-        if (peerConnectionFactory != null) return
-
-        this.eglBase = eglBase ?: EglBase.create()
-        val eglContext = this.eglBase!!.eglBaseContext
-
-        PeerConnectionFactory.initialize(
-            PeerConnectionFactory.InitializationOptions.builder(context)
-                .setEnableInternalTracer(false)
-                .createInitializationOptions()
+    @JvmOverloads
+    fun createLocalVideoStream(
+        width: Int,
+        height: Int,
+        facing: FacingMode = FacingMode.FRONT,
+        includeMicrophone: Boolean = false,
+        configuration: RealtimeConfiguration = RealtimeConfiguration(),
+    ): RealtimeMediaStream {
+        val stream = createLocalVideoStream(
+            context = context,
+            width = width,
+            height = height,
+            facing = facing,
+            includeMicrophone = includeMicrophone,
+            configuration = configuration,
+            logger = logger,
         )
-
-        val encoderFactory = DefaultVideoEncoderFactory(eglContext, true, true)
-        val decoderFactory = DefaultVideoDecoderFactory(eglContext)
-
-        peerConnectionFactory = PeerConnectionFactory.builder()
-            .setVideoEncoderFactory(encoderFactory)
-            .setVideoDecoderFactory(decoderFactory)
-            .createPeerConnectionFactory()
+        _localStreamUpdates.tryEmit(stream)
+        return stream
     }
 
-    /**
-     * Connect to a realtime model and start streaming.
-     *
-     * @param localVideoTrack Local camera video track to send (null for subscribe mode)
-     * @param localAudioTrack Local microphone audio track to send (null to omit)
-     * @param options Connection options including model and callbacks
-     */
-    suspend fun connect(
-        localVideoTrack: VideoTrack? = null,
-        localAudioTrack: AudioTrack? = null,
-        options: ConnectOptions
-    ) {
-        // Ensure factory is initialized
-        if (peerConnectionFactory == null) {
-            initialize()
-        }
-        val factory = peerConnectionFactory!!
+    @JvmOverloads
+    fun createLocalVideoStream(
+        model: RealtimeModel,
+        facing: FacingMode = FacingMode.FRONT,
+        includeMicrophone: Boolean = false,
+        configuration: RealtimeConfiguration = RealtimeConfiguration(),
+    ): RealtimeMediaStream = createLocalVideoStream(
+        width = model.width,
+        height = model.height,
+        facing = facing,
+        includeMicrophone = includeMicrophone,
+        configuration = configuration,
+    )
 
-        // Build WebSocket URL
+    @JvmOverloads
+    suspend fun connect(
+        options: ConnectOptions,
+        localStream: RealtimeMediaStream? = null,
+    ): RealtimeMediaStream {
+        disconnect()
+
         val url = buildWebrtcUrl(
             baseUrl = config.baseUrl,
             model = options.model,
@@ -179,60 +173,45 @@ class RealTimeClient(
             resolution = options.resolution,
         )
 
-        val manager = WebRTCManager(WebRTCConfig(
-            webrtcUrl = url,
-            logger = logger,
-            onDiagnostic = { event -> _diagnostics.tryEmit(event) },
-            onRemoteVideoTrack = options.onRemoteVideoTrack,
-            onRemoteAudioTrack = options.onRemoteAudioTrack,
-            onConnectionStateChange = { state ->
-                _connectionState.value = state
-            },
-            onError = { error ->
-                logger.error("WebRTC error", mapOf("error" to error.message))
-                _errors.tryEmit(ErrorClassifier.classifyWebrtcError(error))
-            },
-            vp8MinBitrate = 300,
-            vp8StartBitrate = 600,
-            initialImage = options.initialImage,
-            initialPrompt = options.initialPrompt
-        ))
-
-        webrtcManager = manager
-
-        // Listen for session ID and generation ticks
-        scope.launch {
-            manager.getWebsocketMessageFlows().sessionIdFlow.collect { msg ->
-                sessionId = msg.sessionId
-            }
-        }
-        scope.launch {
-            manager.getWebsocketMessageFlows().generationTickFlow.collect { msg ->
-                _generationTicks.tryEmit(msg)
-            }
-        }
-
-        // Connect
-        manager.connect(localVideoTrack, localAudioTrack, factory)
-
-        // Start stats collection
-        statsCollector = WebRTCStatsCollector()
-        manager.getPeerConnection()?.let { pc ->
-            statsCollector?.start(pc) { stats ->
-                _stats.tryEmit(stats)
-            }
-        }
+        val manager = RealtimeSessionManager(
+            RealtimeSessionConfig(
+                context = context,
+                signalingUrl = url,
+                model = options.model,
+                logger = logger,
+                realtimeConfiguration = options.realtimeConfiguration,
+                initialImage = options.initialImage,
+                initialPrompt = options.initialPrompt,
+                publishCamera = options.publishCamera,
+                publishMicrophone = options.publishMicrophone,
+                facing = options.facing,
+                onDiagnostic = { event -> _diagnostics.tryEmit(event) },
+                onLocalStream = { stream ->
+                    _localStreamUpdates.tryEmit(stream)
+                },
+                onRemoteStream = { stream ->
+                    _remoteStreamUpdates.tryEmit(stream)
+                    options.onRemoteStream?.invoke(stream)
+                },
+                onConnectionStateChange = { state -> _connectionState.value = state },
+                onSessionStarted = { started -> _sessionStarted.update { started } },
+                onGenerationTick = { tick -> _generationTicks.tryEmit(tick) },
+                onGenerationEnded = { ended -> _generationEnded.tryEmit(ended) },
+                onQueuePosition = { qp -> _queuePositionUpdates.tryEmit(qp) },
+                onError = { error ->
+                    logger.error("Realtime error", mapOf("error" to error.message))
+                    _errors.tryEmit(ErrorClassifier.classifyWebrtcError(error))
+                },
+            ),
+        )
+        sessionManager = manager
+        return manager.connect(localStream)
     }
 
-    /**
-     * Disconnect from the current session.
-     */
     fun disconnect() {
-        statsCollector?.stop()
-        statsCollector = null
-        webrtcManager?.cleanup()
-        webrtcManager = null
-        sessionId = null
+        sessionManager?.cleanup()
+        sessionManager = null
+        _sessionStarted.value = null
         _connectionState.value = ConnectionState.DISCONNECTED
     }
 
@@ -245,7 +224,7 @@ class RealTimeClient(
         enhance: Boolean = true,
         timeoutMs: Long = 15_000L,
     ) {
-        val manager = webrtcManager ?: throw IllegalStateException("Not connected")
+        val manager = sessionManager ?: throw IllegalStateException("Not connected")
         val state = manager.getConnectionState()
         if (state != ConnectionState.CONNECTED && state != ConnectionState.GENERATING) {
             throw IllegalStateException("Cannot send message: connection is $state")
@@ -253,153 +232,72 @@ class RealTimeClient(
         manager.setPrompt(prompt = prompt, enhance = enhance, timeoutMs = timeoutMs)
     }
 
-    /**
-     * Send an image (and optionally a prompt) to the server.
-     * Used for avatar/image-based models.
-     *
-     * @param imageBase64 Base64-encoded image, or null to clear
-     * @param prompt Optional prompt to send with the image
-     * @param enhance Whether to enhance the prompt
-     * @param timeout Timeout in ms for the ack (default 30s)
-     */
     suspend fun setImage(
         imageBase64: String?,
         prompt: String? = null,
         enhance: Boolean? = null,
-        timeout: Long = 30_000L
+        timeout: Long = 30_000L,
     ) {
-        val manager = webrtcManager ?: throw IllegalStateException("Not connected")
-        manager.setImage(imageBase64, WebRTCConnection.SetImageOptions(
-            prompt = prompt,
-            enhance = enhance,
-            timeout = timeout
-        ))
+        val manager = sessionManager ?: throw IllegalStateException("Not connected")
+        manager.setImage(
+            imageBase64,
+            SignalingChannel.SetImageOptions(
+                prompt = prompt,
+                enhance = enhance,
+                timeout = timeout,
+            ),
+        )
     }
 
-    /**
-     * Check if currently connected.
-     */
-    fun isConnected(): Boolean = webrtcManager?.isConnected() ?: false
+    fun isConnected(): Boolean = sessionManager?.isConnected() ?: false
 
-    /**
-     * Get the EGL base context for initializing SurfaceViewRenderers.
-     * Call [initialize] first.
-     */
-    fun getEglBaseContext(): EglBase.Context? = eglBase?.eglBaseContext
-
-    /**
-     * Create a video source for camera capture.
-     * Call [initialize] first.
-     */
-    fun createVideoSource(isScreencast: Boolean = false): VideoSource? =
-        peerConnectionFactory?.createVideoSource(isScreencast)
-
-    /**
-     * Create a video track from a video source.
-     * Call [initialize] first.
-     */
-    fun createVideoTrack(id: String, source: VideoSource): VideoTrack? =
-        peerConnectionFactory?.createVideoTrack(id, source)
-
-    /**
-     * One-line camera setup that produces a ready-to-send [VideoTrack].
-     *
-     * Picks the first device matching [facing] (falling back to the first available device),
-     * wires up the standard Camera2Enumerator → VideoCapturer → VideoSource → VideoTrack
-     * chain using the client's [PeerConnectionFactory] and EGL context, and optionally
-     * pre-flips the input via [MirrorVideoProcessor] for natural selfie rendering.
-     *
-     * Call [initialize] first. Call [CameraVideoTrack.stop] when finished, *before*
-     * [release] — the resulting capturer/source/track are tied to this client's factory.
-     *
-     * The caller must hold `android.permission.CAMERA` at the time of this call.
-     *
-     * @param facing Camera direction to pick from [Camera2Enumerator].
-     * @param mirror Whether to pre-flip frames horizontally. [MirrorMode.AUTO] mirrors
-     *   iff [facing] is [FacingMode.FRONT].
-     * @param width Capture width.
-     * @param height Capture height.
-     * @param fps Capture frame rate.
-     * @param trackId Stable id for the resulting [VideoTrack].
-     */
-    fun createCameraVideoTrack(
-        facing: FacingMode = FacingMode.FRONT,
-        mirror: MirrorMode = MirrorMode.AUTO,
-        width: Int = 1280,
-        height: Int = 720,
-        fps: Int = 30,
-        trackId: String = "local_video",
-    ): CameraVideoTrack {
-        val factory = peerConnectionFactory
-            ?: throw IllegalStateException("RealTimeClient.initialize() must be called before createCameraVideoTrack()")
-        val egl = eglBase
-            ?: throw IllegalStateException("RealTimeClient.initialize() must be called before createCameraVideoTrack()")
-
-        val enumerator = Camera2Enumerator(context)
-        val wantsFront = facing == FacingMode.FRONT
-        val deviceName = enumerator.deviceNames.firstOrNull { enumerator.isFrontFacing(it) == wantsFront }
-            ?: enumerator.deviceNames.firstOrNull()
-            ?: throw IllegalStateException("No camera devices available")
-
-        val capturer = enumerator.createCapturer(deviceName, null)
-            ?: throw IllegalStateException("Failed to create camera capturer for $deviceName")
-
-        var source: VideoSource? = null
-        var surfaceTextureHelper: SurfaceTextureHelper? = null
-        var track: VideoTrack? = null
-        var captureStarted = false
-        try {
-            source = factory.createVideoSource(capturer.isScreencast)
-                ?: throw IllegalStateException("Failed to create video source")
-
-            val shouldMirror = when (mirror) {
-                MirrorMode.OFF -> false
-                MirrorMode.ON -> true
-                MirrorMode.AUTO -> enumerator.isFrontFacing(deviceName)
-            }
-            if (shouldMirror) {
-                source.setVideoProcessor(MirrorVideoProcessor(logger))
-            }
-
-            surfaceTextureHelper = SurfaceTextureHelper.create("CaptureThread", egl.eglBaseContext)
-            capturer.initialize(surfaceTextureHelper, context, source.capturerObserver)
-            capturer.startCapture(width, height, fps)
-            captureStarted = true
-
-            track = factory.createVideoTrack(trackId, source)
-                ?: throw IllegalStateException("Failed to create video track")
-            track.setEnabled(true)
-
-            return CameraVideoTrack(
-                track = track,
-                source = source,
-                capturer = capturer,
-                surfaceTextureHelper = surfaceTextureHelper,
-            )
-        } catch (t: Throwable) {
-            // Mirror the disposal order of CameraVideoTrack.stop():
-            //   stopCapture → capturer → track → source → surfaceTextureHelper.
-            // The capturer holds a reference to the SurfaceTextureHelper, so dispose it first.
-            if (captureStarted) {
-                try { capturer.stopCapture() } catch (_: Exception) {}
-            }
-            capturer.dispose()
-            track?.dispose()
-            source?.dispose()
-            surfaceTextureHelper?.dispose()
-            throw t
-        }
-    }
-
-    /**
-     * Release all resources. Call when done with the client.
-     */
     fun release() {
         disconnect()
         scope.cancel()
-        peerConnectionFactory?.dispose()
-        peerConnectionFactory = null
-        eglBase?.release()
-        eglBase = null
+    }
+
+    companion object {
+        /**
+         * Stateless preview-track factory: callers can build a preview
+         * before they've decided which `apiKey` to use.
+         */
+        @JvmStatic
+        @JvmOverloads
+        fun createLocalVideoStream(
+            context: android.content.Context,
+            width: Int,
+            height: Int,
+            facing: FacingMode = FacingMode.FRONT,
+            includeMicrophone: Boolean = false,
+            configuration: RealtimeConfiguration = RealtimeConfiguration(),
+            logger: Logger = NoopLogger,
+        ): RealtimeMediaStream = LocalStreamFactory.createCameraStream(
+            context = context,
+            configuration = configuration,
+            width = width,
+            height = height,
+            facing = facing,
+            includeMicrophone = includeMicrophone,
+            logger = logger,
+        )
+
+        @JvmStatic
+        @JvmOverloads
+        fun createLocalVideoStream(
+            context: android.content.Context,
+            model: RealtimeModel,
+            facing: FacingMode = FacingMode.FRONT,
+            includeMicrophone: Boolean = false,
+            configuration: RealtimeConfiguration = RealtimeConfiguration(),
+            logger: Logger = NoopLogger,
+        ): RealtimeMediaStream = createLocalVideoStream(
+            context = context,
+            width = model.width,
+            height = model.height,
+            facing = facing,
+            includeMicrophone = includeMicrophone,
+            configuration = configuration,
+            logger = logger,
+        )
     }
 }

@@ -67,7 +67,31 @@ data class SessionIdMessage(
     @SerialName("server_port") val serverPort: Int
 ) : ServerMessage
 
+@Serializable
+data class LiveKitRoomInfoMessage(
+    @SerialName("livekit_url") val liveKitUrl: String,
+    val token: String,
+    @SerialName("room_name") val roomName: String,
+    @SerialName("session_id") val sessionId: String
+) : ServerMessage
+
+@Serializable
+data class StatusMessage(val status: String) : ServerMessage
+
+@Serializable
+data class QueuePositionMessage(
+    val position: Int? = null,
+    @SerialName("queue_position") val legacyQueuePosition: Int? = null,
+    @SerialName("queue_size") val queueSize: Int? = null
+) : ServerMessage {
+    val queuePosition: Int?
+        get() = position ?: legacyQueuePosition
+}
+
 // Client-only messages
+
+@Serializable
+object LiveKitJoinMessage : ClientMessage
 
 @Serializable
 data class PromptMessage(
@@ -104,6 +128,9 @@ object SignalingMessageParser {
             "generation_tick" -> json.decodeFromJsonElement<GenerationTickMessage>(jsonObject)
             "generation_ended" -> json.decodeFromJsonElement<GenerationEndedMessage>(jsonObject)
             "session_id" -> json.decodeFromJsonElement<SessionIdMessage>(jsonObject)
+            "livekit_room_info" -> json.decodeFromJsonElement<LiveKitRoomInfoMessage>(jsonObject)
+            "status" -> json.decodeFromJsonElement<StatusMessage>(jsonObject)
+            "queue_position" -> json.decodeFromJsonElement<QueuePositionMessage>(jsonObject)
             else -> throw IllegalArgumentException("Unknown message type: $type")
         }
     }
@@ -125,6 +152,9 @@ object SignalingMessageParser {
                 } else {
                     put("candidate", JsonNull)
                 }
+            }
+            LiveKitJoinMessage -> buildJsonObject {
+                put("type", "livekit_join")
             }
             is PromptMessage -> buildJsonObject {
                 put("type", "prompt")

@@ -122,7 +122,7 @@ class QueueClient internal constructor(
                 throw QueueSubmitException("Failed to parse submit response: ${e.message}", cause = e)
             }
         }.also {
-            logger.info("Queue: job submitted", mapOf("jobId" to it.jobId, "status" to it.status.name))
+            logger.debug("Queue: job submitted", mapOf("jobId" to it.jobId, "status" to it.status.name))
         }
     }
 
@@ -225,7 +225,7 @@ class QueueClient internal constructor(
 
             when (current.status) {
                 JobStatus.COMPLETED -> {
-                    logger.info("Queue: job completed", mapOf("jobId" to job.jobId))
+                    logger.debug("Queue: job completed", mapOf("jobId" to job.jobId))
                     val data = result(job.jobId)
                     return QueueJobResult.Completed(jobId = job.jobId, data = data)
                 }
@@ -277,7 +277,7 @@ class QueueClient internal constructor(
             val current = status(job.jobId)
             when (current.status) {
                 JobStatus.COMPLETED -> {
-                    logger.info("Queue: job completed", mapOf("jobId" to job.jobId))
+                    logger.debug("Queue: job completed", mapOf("jobId" to job.jobId))
                     val data = result(job.jobId)
                     emit(QueueJobResult.Completed(jobId = job.jobId, data = data))
                     return@flow
