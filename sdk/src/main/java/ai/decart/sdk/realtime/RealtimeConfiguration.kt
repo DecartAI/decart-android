@@ -69,15 +69,13 @@ data class RealtimeConfiguration(
             preferredCodec
 
         companion object {
-            const val DEFAULT_MAX_BITRATE: Int = 2_800_000
+            const val DEFAULT_MAX_BITRATE: Int = 2_000_000
             const val DEFAULT_MAX_FRAMERATE: Int = 30
-            const val DEFAULT_SIMULCAST: Boolean = false
-            // Do not recommend H.264 here: in realtime sessions it adds about
-            // 10 seconds to connection TTFF (time to first frame).
-            val DEFAULT_PREFERRED_CODEC: String = VideoCodec.VP9.codecName
-            val DEFAULT_BACKUP_CODEC: String = VideoCodec.VP8.codecName
+            const val DEFAULT_SIMULCAST: Boolean = true
+            val DEFAULT_PREFERRED_CODEC: String = VideoCodec.H264.codecName
+            val DEFAULT_BACKUP_CODEC: String? = VideoCodec.VP9.codecName
             val DEFAULT_DEGRADATION_PREFERENCE: RtpParameters.DegradationPreference =
-                RtpParameters.DegradationPreference.MAINTAIN_FRAMERATE
+                RtpParameters.DegradationPreference.BALANCED
         }
     }
 
