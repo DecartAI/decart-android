@@ -68,8 +68,12 @@ realtime.connect(
     ),
 )
 
-// 2. Change prompt during session
-realtime.setPrompt("a sunny beach scene", enhance = true)
+// 2. Change prompt during session (suspends until the server acks)
+try {
+    realtime.setPrompt("a sunny beach scene", enhance = true)
+} catch (e: Exception) {
+    // ack failure, timeout, or websocket disconnect
+}
 
 // 3. Disconnect when done
 realtime.disconnect()
@@ -234,8 +238,8 @@ Typed input helpers:
 |--------|-------------|
 | `connect(options)` | Connect to a model, join the returned LiveKit room, and optionally publish camera/microphone |
 | `disconnect()` | End the current session |
-| `setPrompt(prompt, enhance)` | Update the prompt |
-| `setImage(imageBase64, prompt, enhance, timeout)` | Set a reference image |
+| `setPrompt(prompt, enhance, timeoutMs)` | **suspend** — update the prompt; throws on ack failure, timeout (default 15s), or disconnect |
+| `setImage(imageBase64, prompt, enhance, timeout)` | **suspend** — set a reference image; throws on ack failure, timeout (default 30s), or disconnect |
 | `release()` | Release all resources |
 
 **Observable State:**

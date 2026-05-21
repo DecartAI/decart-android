@@ -122,8 +122,8 @@ internal class RealtimeSessionManager(
             ?: throw IllegalStateException("Not connected")
     }
 
-    suspend fun setPrompt(text: String, enhance: Boolean, timeoutMs: Long) {
-        signalingChannel?.sendPrompt(text, enhance, timeoutMs)
+    suspend fun setPrompt(prompt: String, enhance: Boolean, timeoutMs: Long) {
+        signalingChannel?.sendPrompt(prompt, enhance, timeoutMs)
             ?: throw IllegalStateException("Not connected")
     }
 

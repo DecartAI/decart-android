@@ -15,12 +15,12 @@ internal data class AckResult(val success: Boolean, val error: String?)
  *
  * The non-obvious bits:
  *  - Both jobs use [CoroutineStart.UNDISPATCHED] so the listener subscribes
- *    *before* [send] runs — a fast ack on a non-replaying flow would
+ *    before [send] runs. A fast ack on a non-replaying flow would
  *    otherwise be dropped, producing a false timeout.
- *  - [register] runs after the jobs list is populated; the fail-hook fires
- *    from background OkHttp threads and iterates `jobs`.
+ *  - [register] runs after the jobs list is populated. The fail-hook can
+ *    fire from background OkHttp threads and iterates `jobs`.
  *  - The post-register liveness check covers an UNDISPATCHED listener that
- *    resolved synchronously before [register] could run — without it the
+ *    resolved synchronously before [register] could run; without it the
  *    fail-hook leaks until cleanup.
  */
 internal suspend fun awaitAck(
@@ -60,7 +60,13 @@ internal suspend fun awaitAck(
         else resolve(Result.failure(Exception(ack.error ?: ackFailureMessage)))
     }
 
+    // Register only after jobs is fully populated. The failure path runs on
+    // OkHttp threads and iterates jobs.forEach; exposing an incomplete list
+    // would race with this thread's additions.
     register(failHook)
+    // If a UNDISPATCHED listener already ran synchronously (buffered ack, or
+    // timeoutMs <= 0) and resumed cont before register, the hook and any
+    // pending jobs would otherwise leak.
     if (!cont.isActive) {
         jobs.forEach { it.cancel() }
         unregister(failHook)

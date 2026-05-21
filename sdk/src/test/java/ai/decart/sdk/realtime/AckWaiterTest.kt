@@ -37,7 +37,7 @@ class AckWaiterTest {
                 register = registry.register,
                 unregister = registry.unregister,
                 awaitMatchingAck = { ackFlow.first() },
-                send = { sendInvoked = true; true },
+                send = { sendInvoked = true; true }
             )
         }
         runCurrent()
@@ -68,9 +68,10 @@ class AckWaiterTest {
                 unregister = registry.unregister,
                 awaitMatchingAck = { ackFlow.first() },
                 send = {
+                    // Simulates an ack racing on the same thread before send returns.
                     ackFlow.tryEmit(AckResult(success = true, error = null))
                     true
-                },
+                }
             )
         }
         runCurrent()
@@ -93,7 +94,7 @@ class AckWaiterTest {
                     register = registry.register,
                     unregister = registry.unregister,
                     awaitMatchingAck = { ackFlow.first() },
-                    send = { true },
+                    send = { true }
                 )
             }
         }
@@ -122,7 +123,7 @@ class AckWaiterTest {
                     register = registry.register,
                     unregister = registry.unregister,
                     awaitMatchingAck = { ackFlow.first() },
-                    send = { true },
+                    send = { true }
                 )
             }
         }
@@ -154,7 +155,7 @@ class AckWaiterTest {
                     val a = ackFlow.first { it.prompt == target }
                     AckResult(success = a.success, error = a.error)
                 },
-                send = { true },
+                send = { true }
             )
         }
         runCurrent()
@@ -182,7 +183,7 @@ class AckWaiterTest {
                     register = registry.register,
                     unregister = registry.unregister,
                     awaitMatchingAck = { ackFlow.first() },
-                    send = { true },
+                    send = { true }
                 )
             }
         }
@@ -214,7 +215,7 @@ class AckWaiterTest {
                 register = registry.register,
                 unregister = registry.unregister,
                 awaitMatchingAck = { ackFlow.first() },
-                send = { false },
+                send = { false }
             )
         }
 
@@ -240,7 +241,7 @@ class AckWaiterTest {
                     register = registry.register,
                     unregister = registry.unregister,
                     awaitMatchingAck = { ackFlow.first() },
-                    send = { true },
+                    send = { true }
                 )
             }
         }
@@ -270,7 +271,7 @@ class AckWaiterTest {
                     register = registry.register,
                     unregister = registry.unregister,
                     awaitMatchingAck = { ackFlow.first() },
-                    send = { true },
+                    send = { true }
                 )
             }
         }

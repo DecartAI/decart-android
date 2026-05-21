@@ -215,14 +215,21 @@ class RealTimeClient(
         _connectionState.value = ConnectionState.DISCONNECTED
     }
 
-    /** Throws on ack failure, timeout, or websocket disconnect. */
-    suspend fun setPrompt(prompt: String, enhance: Boolean = true, timeoutMs: Long = 15_000L) {
+    /**
+     * Update the prompt and suspend until the server acks. Throws on ack
+     * failure, timeout, send failure, or websocket disconnect.
+     */
+    suspend fun setPrompt(
+        prompt: String,
+        enhance: Boolean = true,
+        timeoutMs: Long = 15_000L,
+    ) {
         val manager = sessionManager ?: throw IllegalStateException("Not connected")
         val state = manager.getConnectionState()
         if (state != ConnectionState.CONNECTED && state != ConnectionState.GENERATING) {
             throw IllegalStateException("Cannot send message: connection is $state")
         }
-        manager.setPrompt(prompt, enhance, timeoutMs)
+        manager.setPrompt(prompt = prompt, enhance = enhance, timeoutMs = timeoutMs)
     }
 
     suspend fun setImage(
