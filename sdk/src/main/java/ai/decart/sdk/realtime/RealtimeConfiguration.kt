@@ -69,7 +69,7 @@ data class RealtimeConfiguration(
             preferredCodec
 
         companion object {
-            const val DEFAULT_MAX_BITRATE: Int = 1_800_000
+            const val DEFAULT_MAX_BITRATE: Int = 2_800_000
             const val DEFAULT_MAX_FRAMERATE: Int = 30
             const val DEFAULT_SIMULCAST: Boolean = false
             // Do not recommend H.264 here: in realtime sessions it adds about
