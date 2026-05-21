@@ -15,7 +15,7 @@ import android.content.Context
  */
 data class DecartClientConfig(
     val apiKey: String,
-    val baseUrl: String = "wss://api.stage-decart.com",
+    val baseUrl: String = "wss://api.decart.ai",
     val httpBaseUrl: String = "https://api.decart.ai",
     val logLevel: LogLevel = LogLevel.WARN
 )

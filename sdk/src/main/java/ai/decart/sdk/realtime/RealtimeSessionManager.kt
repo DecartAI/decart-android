@@ -484,6 +484,21 @@ internal class RealtimeSessionManager(
 
     private fun scheduleReconnect(cause: ConnectionLossCause) {
         if (reconnectJob?.isActive == true) return
+        if (providedLocalStream?.room != null) {
+            logger.warn(
+                "realtime reconnect skipped for caller-owned LiveKit room",
+                mapOf("source" to cause.source, "reason" to cause.reason),
+            )
+            hasEstablishedSession = false
+            tearDownTransports()
+            emitState(ConnectionState.DISCONNECTED)
+            config.onError(
+                IllegalStateException(
+                    "Cannot auto-reconnect a caller-provided LiveKit Room; create a new local stream and connect again",
+                ),
+            )
+            return
+        }
         emitState(ConnectionState.RECONNECTING)
         val attemptCycle = ++currentAttempt
         reconnectJob = scope.launch {
@@ -534,7 +549,7 @@ internal class RealtimeSessionManager(
             try { track.stop() } catch (_: Exception) {}
             try { track.dispose() } catch (_: Exception) {}
         }
-        try { stream.room?.disconnect() } catch (_: Exception) {}
+        try { stream.room?.release() } catch (_: Exception) {}
     }
 
     private fun emitState(state: ConnectionState) {

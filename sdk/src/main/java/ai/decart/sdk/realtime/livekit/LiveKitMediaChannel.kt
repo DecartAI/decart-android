@@ -185,6 +185,7 @@ internal class LiveKitMediaChannel(
      */
     fun disconnect() {
         val currentRoom = room
+        val shouldReleaseRoom = ownsRoom
         room = null
         ownsRoom = false
         roomEventsJob?.cancel()
@@ -195,7 +196,11 @@ internal class LiveKitMediaChannel(
         remoteAudioTrack = null
         if (currentRoom != null) {
             try {
-                currentRoom.disconnect()
+                if (shouldReleaseRoom) {
+                    currentRoom.release()
+                } else {
+                    currentRoom.disconnect()
+                }
             } catch (_: Exception) {
                 // best-effort
             }

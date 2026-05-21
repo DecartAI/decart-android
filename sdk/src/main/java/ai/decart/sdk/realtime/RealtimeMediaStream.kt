@@ -28,7 +28,7 @@ data class RealtimeMediaStream(
             try { track.stop() } catch (_: Exception) {}
             try { track.dispose() } catch (_: Exception) {}
         }
-        try { room?.disconnect() } catch (_: Exception) {}
+        try { room?.release() } catch (_: Exception) {}
     }
 
     companion object {
