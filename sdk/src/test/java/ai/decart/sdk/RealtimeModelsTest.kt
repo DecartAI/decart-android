@@ -53,6 +53,24 @@ class RealtimeModelsTest {
         }
     }
 
+
+    @Test
+    fun `lucy realtime model dimensions match encoder contract`() {
+        val expectedWidth = 1088
+        val expectedHeight = 624
+
+        listOf(
+            RealtimeModels.LUCY_2_1,
+            RealtimeModels.LUCY_2_1_VTON,
+            RealtimeModels.LUCY_VTON_2,
+            RealtimeModels.LUCY_LATEST,
+            RealtimeModels.LUCY_VTON_LATEST,
+        ).forEach { model ->
+            assertEquals("${model.name} width", expectedWidth, model.width)
+            assertEquals("${model.name} height", expectedHeight, model.height)
+        }
+    }
+
     @Test
     fun `all realtime models capture at 30 fps`() {
         RealtimeModels.all.forEach { model ->
