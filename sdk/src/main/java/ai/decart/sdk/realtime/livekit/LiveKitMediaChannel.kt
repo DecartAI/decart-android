@@ -17,8 +17,6 @@ import io.livekit.android.events.RoomEvent
 import io.livekit.android.events.collect
 import io.livekit.android.room.Room
 import io.livekit.android.room.participant.RemoteParticipant
-import io.livekit.android.room.track.AudioTrack
-import io.livekit.android.room.track.LocalAudioTrack
 import io.livekit.android.room.track.LocalVideoTrack
 import io.livekit.android.room.track.RemoteTrackPublication
 import io.livekit.android.room.track.Track
@@ -56,7 +54,6 @@ internal class LiveKitMediaChannel(
     private var ownsRoom: Boolean = false
     private var roomEventsJob: Job? = null
     private var remoteVideoTrack: VideoTrack? = null
-    private var remoteAudioTrack: AudioTrack? = null
     private var firstFrameSink: FirstFrameSinkRef? = null
     private var roomConnectedAtNs: Long = 0L
     private var publishStatsJob: Job? = null
@@ -75,7 +72,6 @@ internal class LiveKitMediaChannel(
         val nextRoom = providedRoom ?: createOwnedRoom()
         adoptRoom(nextRoom, owns = providedRoom == null)
         remoteVideoTrack = null
-        remoteAudioTrack = null
         detachFirstFrameSink()
 
         nextRoom.connect(roomInfo.liveKitUrl, roomInfo.token, connectOptions)
@@ -94,13 +90,6 @@ internal class LiveKitMediaChannel(
                 throw IllegalStateException("Failed to publish local video track")
             }
             startPublishStatsLoop(track)
-        }
-        (stream.audioTrack as? LocalAudioTrack)?.let { track ->
-            track.start()
-            val published = participant.publishAudioTrack(track)
-            if (!published) {
-                throw IllegalStateException("Failed to publish local audio track")
-            }
         }
     }
 
@@ -174,7 +163,6 @@ internal class LiveKitMediaChannel(
     val currentRemoteStream: RealtimeMediaStream
         get() = RealtimeMediaStream(
             videoTrack = remoteVideoTrack,
-            audioTrack = remoteAudioTrack,
             id = RealtimeMediaStream.REMOTE_STREAM_ID,
             room = room,
         )
@@ -193,7 +181,6 @@ internal class LiveKitMediaChannel(
         stopPublishStatsLoop()
         detachFirstFrameSink()
         remoteVideoTrack = null
-        remoteAudioTrack = null
         if (currentRoom != null) {
             try {
                 if (shouldReleaseRoom) {
@@ -291,10 +278,6 @@ internal class LiveKitMediaChannel(
                     remoteVideoTrack = track
                     attachFirstFrameSink(track)
                 }
-                emitRemoteStreamIfAvailable()
-            }
-            is AudioTrack -> {
-                remoteAudioTrack = track
                 emitRemoteStreamIfAvailable()
             }
             else -> Unit

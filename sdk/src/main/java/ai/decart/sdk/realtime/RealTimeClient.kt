@@ -9,8 +9,10 @@ import ai.decart.sdk.RealtimeModel
 import ai.decart.sdk.realtime.livekit.LocalStreamFactory
 import android.content.Context
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,6 +47,7 @@ data class ConnectOptions @JvmOverloads constructor(
     val resolution: Resolution? = null,
     val realtimeConfiguration: RealtimeConfiguration = RealtimeConfiguration(),
     val publishCamera: Boolean = true,
+    @Deprecated("Audio publishing is not supported in the Android LiveKit publisher yet; this option is ignored.")
     val publishMicrophone: Boolean = false,
     val facing: FacingMode = FacingMode.FRONT,
     val onRemoteStream: ((RealtimeMediaStream) -> Unit)? = null,
@@ -87,27 +90,36 @@ class RealTimeClient(
 
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
+    val connectionChange: StateFlow<ConnectionState> = connectionState
 
     private val _errors = MutableSharedFlow<DecartError>(extraBufferCapacity = 10)
     val errors: SharedFlow<DecartError> = _errors.asSharedFlow()
 
     private val _generationTicks = MutableSharedFlow<GenerationTickMessage>(extraBufferCapacity = 10)
     val generationTicks: SharedFlow<GenerationTickMessage> = _generationTicks.asSharedFlow()
+    val generationTick: SharedFlow<GenerationTickMessage> = generationTicks
 
     private val _generationEnded = MutableSharedFlow<GenerationEndedMessage>(extraBufferCapacity = 10)
     val generationEnded: SharedFlow<GenerationEndedMessage> = _generationEnded.asSharedFlow()
 
     private val _queuePositionUpdates = MutableSharedFlow<QueuePositionMessage>(replay = 1, extraBufferCapacity = 10)
     val queuePositionUpdates: SharedFlow<QueuePositionMessage> = _queuePositionUpdates.asSharedFlow()
+    val queuePosition: SharedFlow<QueuePositionMessage> = queuePositionUpdates
 
     private val _diagnostics = MutableSharedFlow<DiagnosticEvent>(extraBufferCapacity = 50)
     val diagnostics: SharedFlow<DiagnosticEvent> = _diagnostics.asSharedFlow()
+    val diagnostic: SharedFlow<DiagnosticEvent> = diagnostics
+
+    private val _stats = MutableSharedFlow<PublishStatsEvent>(extraBufferCapacity = 50)
+    val stats: SharedFlow<PublishStatsEvent> = _stats.asSharedFlow()
 
     private val _remoteStreamUpdates = MutableSharedFlow<RealtimeMediaStream>(replay = 1, extraBufferCapacity = 10)
     val remoteStreamUpdates: SharedFlow<RealtimeMediaStream> = _remoteStreamUpdates.asSharedFlow()
+    val remoteStream: SharedFlow<RealtimeMediaStream> = remoteStreamUpdates
 
     private val _localStreamUpdates = MutableSharedFlow<RealtimeMediaStream>(replay = 1, extraBufferCapacity = 10)
     val localStreamUpdates: SharedFlow<RealtimeMediaStream> = _localStreamUpdates.asSharedFlow()
+    val localStream: SharedFlow<RealtimeMediaStream> = localStreamUpdates
 
     private val _sessionStarted = MutableStateFlow<SessionStarted?>(null)
     val sessionStarted: StateFlow<SessionStarted?> = _sessionStarted.asStateFlow()
@@ -129,6 +141,7 @@ class RealTimeClient(
         width: Int,
         height: Int,
         facing: FacingMode = FacingMode.FRONT,
+        // Reserved for future audio publishing support; currently ignored.
         includeMicrophone: Boolean = false,
         configuration: RealtimeConfiguration = RealtimeConfiguration(),
     ): RealtimeMediaStream {
@@ -137,7 +150,6 @@ class RealTimeClient(
             width = width,
             height = height,
             facing = facing,
-            includeMicrophone = includeMicrophone,
             configuration = configuration,
             logger = logger,
         )
@@ -149,13 +161,13 @@ class RealTimeClient(
     fun createLocalVideoStream(
         model: RealtimeModel,
         facing: FacingMode = FacingMode.FRONT,
+        // Reserved for future audio publishing support; currently ignored.
         includeMicrophone: Boolean = false,
         configuration: RealtimeConfiguration = RealtimeConfiguration(),
     ): RealtimeMediaStream = createLocalVideoStream(
         width = model.width,
         height = model.height,
         facing = facing,
-        includeMicrophone = includeMicrophone,
         configuration = configuration,
     )
 
@@ -183,9 +195,13 @@ class RealTimeClient(
                 initialImage = options.initialImage,
                 initialPrompt = options.initialPrompt,
                 publishCamera = options.publishCamera,
-                publishMicrophone = options.publishMicrophone,
                 facing = options.facing,
-                onDiagnostic = { event -> _diagnostics.tryEmit(event) },
+                onDiagnostic = { event ->
+                    _diagnostics.tryEmit(event)
+                    if (event is DiagnosticEvent.PublishStats) {
+                        _stats.tryEmit(event.data)
+                    }
+                },
                 onLocalStream = { stream ->
                     _localStreamUpdates.tryEmit(stream)
                 },
@@ -216,20 +232,37 @@ class RealTimeClient(
     }
 
     /**
-     * Update the prompt and suspend until the server acks. Throws on ack
-     * failure, timeout, send failure, or websocket disconnect.
+     * Update the prompt immediately and return a wait handle for the server ack.
+     * Callers may ignore the returned [Deferred], or call `await()` to observe
+     * ack failure, timeout, send failure, or websocket disconnect.
      */
-    suspend fun setPrompt(
+    fun setPrompt(
         prompt: String,
         enhance: Boolean = true,
         timeoutMs: Long = 15_000L,
-    ) {
+    ): Deferred<Unit> {
         val manager = sessionManager ?: throw IllegalStateException("Not connected")
         val state = manager.getConnectionState()
         if (state != ConnectionState.CONNECTED && state != ConnectionState.GENERATING) {
             throw IllegalStateException("Cannot send message: connection is $state")
         }
-        manager.setPrompt(prompt = prompt, enhance = enhance, timeoutMs = timeoutMs)
+        return scope.async {
+            try {
+                manager.setPrompt(prompt = prompt, enhance = enhance, timeoutMs = timeoutMs)
+            } catch (error: Exception) {
+                logger.error("Realtime prompt error", mapOf("error" to error.message))
+                _errors.tryEmit(ErrorClassifier.classifyWebrtcError(error))
+                throw error
+            }
+        }
+    }
+
+    suspend fun setPromptAndAwaitAck(
+        prompt: String,
+        enhance: Boolean = true,
+        timeoutMs: Long = 15_000L,
+    ) {
+        setPrompt(prompt = prompt, enhance = enhance, timeoutMs = timeoutMs).await()
     }
 
     suspend fun setImage(
@@ -268,6 +301,7 @@ class RealTimeClient(
             width: Int,
             height: Int,
             facing: FacingMode = FacingMode.FRONT,
+            // Reserved for future audio publishing support; currently ignored.
             includeMicrophone: Boolean = false,
             configuration: RealtimeConfiguration = RealtimeConfiguration(),
             logger: Logger = NoopLogger,
@@ -277,7 +311,6 @@ class RealTimeClient(
             width = width,
             height = height,
             facing = facing,
-            includeMicrophone = includeMicrophone,
             logger = logger,
         )
 
@@ -287,6 +320,7 @@ class RealTimeClient(
             context: android.content.Context,
             model: RealtimeModel,
             facing: FacingMode = FacingMode.FRONT,
+            // Reserved for future audio publishing support; currently ignored.
             includeMicrophone: Boolean = false,
             configuration: RealtimeConfiguration = RealtimeConfiguration(),
             logger: Logger = NoopLogger,
@@ -295,7 +329,6 @@ class RealTimeClient(
             width = model.width,
             height = model.height,
             facing = facing,
-            includeMicrophone = includeMicrophone,
             configuration = configuration,
             logger = logger,
         )

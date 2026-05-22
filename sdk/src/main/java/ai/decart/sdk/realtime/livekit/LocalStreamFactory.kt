@@ -21,7 +21,6 @@ internal object LocalStreamFactory {
         width: Int,
         height: Int,
         facing: FacingMode = FacingMode.FRONT,
-        includeMicrophone: Boolean = false,
         logger: Logger = NoopLogger,
     ): RealtimeMediaStream {
         val room = LiveKit.create(
@@ -40,15 +39,8 @@ internal object LocalStreamFactory {
         )
         videoTrack.startCapture()
 
-        val audioTrack = if (includeMicrophone) {
-            participant.createAudioTrack(name = "local_audio")
-        } else {
-            null
-        }
-
         return RealtimeMediaStream(
             videoTrack = videoTrack,
-            audioTrack = audioTrack,
             id = RealtimeMediaStream.LOCAL_STREAM_ID,
             room = room,
         )

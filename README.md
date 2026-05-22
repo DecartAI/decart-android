@@ -11,8 +11,8 @@ Android SDK for Decart realtime streaming and batch video generation.
 - Batch video generation via `/v1/jobs/*` queue APIs
 - Built-in realtime and video model registries
 - Kotlin coroutines and Flow-based reactive state management
-- Observable connection state, remote media streams, errors, and diagnostics
-- LiveKit camera and audio publishing support
+- Observable connection state, remote media streams, errors, diagnostics, and publish stats
+- LiveKit camera publishing support
 
 ## Requirements
 
@@ -38,7 +38,7 @@ Add the dependency to your app's `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("com.github.DecartAI:decart-android:0.6.1")
+    implementation("com.github.DecartAI:decart-android:0.7.0")
 }
 ```
 
@@ -68,9 +68,12 @@ realtime.connect(
     ),
 )
 
-// 2. Change prompt during session (suspends until the server acks)
+// 2. Change prompt during session. The call starts immediately.
+val promptAck = realtime.setPrompt("a sunny beach scene", enhance = true)
+
+// Optional: wait for the server ack, mirroring JS Promise usage.
 try {
-    realtime.setPrompt("a sunny beach scene", enhance = true)
+    promptAck.await()
 } catch (e: Exception) {
     // ack failure, timeout, or websocket disconnect
 }
@@ -82,8 +85,8 @@ client.release()
 
 ### LiveKit rendering
 
-Realtime media tracks are LiveKit tracks. Audio plays automatically after subscription;
-video tracks can be rendered with LiveKit's Android renderer:
+Realtime media tracks are LiveKit tracks. The Android publisher API currently
+surfaces remote video streams:
 
 ```kotlin
 import io.livekit.android.renderer.SurfaceViewRenderer
@@ -236,9 +239,10 @@ Typed input helpers:
 
 | Method | Description |
 |--------|-------------|
-| `connect(options)` | Connect to a model, join the returned LiveKit room, and optionally publish camera/microphone |
+| `connect(options)` | Connect to a model, join the returned LiveKit room, and publish the camera by default |
 | `disconnect()` | End the current session |
-| `setPrompt(prompt, enhance, timeoutMs)` | **suspend** — update the prompt; throws on ack failure, timeout (default 15s), or disconnect |
+| `setPrompt(prompt, enhance, timeoutMs)` | Starts the prompt update immediately and returns `Deferred<Unit>`; call `await()` to observe ack failure, timeout (default 15s), or disconnect |
+| `setPromptAndAwaitAck(prompt, enhance, timeoutMs)` | **suspend** — convenience wrapper around `setPrompt(...).await()` |
 | `setImage(imageBase64, prompt, enhance, timeout)` | **suspend** — set a reference image; throws on ack failure, timeout (default 30s), or disconnect |
 | `release()` | Release all resources |
 
@@ -247,14 +251,21 @@ Typed input helpers:
 | Property | Type | Description |
 |----------|------|-------------|
 | `connectionState` | `StateFlow<ConnectionState>` | Current connection state |
+| `connectionChange` | `StateFlow<ConnectionState>` | JS-aligned alias for `connectionState` |
 | `errors` | `SharedFlow<DecartError>` | Error events |
+| `generationTick` | `SharedFlow<GenerationTickMessage>` | Generation tick events |
 | `localStreamUpdates` | `SharedFlow<RealtimeMediaStream>` | Local LiveKit stream updates |
+| `localStream` | `SharedFlow<RealtimeMediaStream>` | JS-aligned alias for `localStreamUpdates` |
 | `remoteStreamUpdates` | `SharedFlow<RealtimeMediaStream>` | Remote LiveKit stream updates |
+| `remoteStream` | `SharedFlow<RealtimeMediaStream>` | JS-aligned alias for `remoteStreamUpdates` |
 | `queuePositionUpdates` | `SharedFlow<QueuePositionMessage>` | Queue position updates while waiting for a server slot |
+| `queuePosition` | `SharedFlow<QueuePositionMessage>` | JS-aligned alias for `queuePositionUpdates` |
 | `generationEnded` | `SharedFlow<GenerationEndedMessage>` | Generation lifecycle end events |
 | `sessionStarted` | `StateFlow<SessionStarted?>` | `(sessionId, subscribeToken)` once the LiveKit room info arrives |
 | `subscribeToken` | `String?` | Base64 token to hand to viewer / subscribe clients |
 | `diagnostics` | `SharedFlow<DiagnosticEvent>` | Connection diagnostic events (incl. `PublishStats`) |
+| `diagnostic` | `SharedFlow<DiagnosticEvent>` | JS-aligned alias for `diagnostics` |
+| `stats` | `SharedFlow<PublishStatsEvent>` | Publisher outbound video stats, aligned with the JS `stats` event |
 
 ### QueueClient
 
