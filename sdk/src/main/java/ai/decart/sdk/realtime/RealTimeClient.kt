@@ -293,6 +293,50 @@ class RealTimeClient(
         setPrompt(prompt = prompt, enhance = enhance, timeoutMs = timeoutMs)
     }
 
+    suspend fun setImage(
+        imageBase64: String?,
+        prompt: String? = null,
+        enhance: Boolean? = null,
+        timeout: Long = 30_000L,
+    ) {
+        val manager = requireSessionManager()
+        try {
+            manager.setImage(
+                imageBase64,
+                setImageOptions(prompt = prompt, enhance = enhance, timeout = timeout),
+            )
+        } catch (error: Exception) {
+            handleMutationError("Realtime image error", error)
+            throw error
+        }
+    }
+
+    /**
+     * Start a reference image update immediately and return a wait handle for
+     * the server ack. This also covers the optional [prompt] and [enhance]
+     * values carried by the set-image request. Call `await()` on the returned
+     * [Deferred] to observe ack failure, timeout, send failure, or websocket
+     * disconnect. If the [Deferred] is not awaited, failures are still emitted
+     * through [errors].
+     */
+    fun setImageAsync(
+        imageBase64: String?,
+        prompt: String? = null,
+        enhance: Boolean? = null,
+        timeout: Long = 30_000L,
+    ): Deferred<Unit> {
+        val manager = requireSessionManager()
+        val options = setImageOptions(prompt = prompt, enhance = enhance, timeout = timeout)
+        return scope.async {
+            try {
+                manager.setImage(imageBase64, options)
+            } catch (error: Exception) {
+                handleMutationError("Realtime image error", error)
+                throw error
+            }
+        }
+    }
+
     private fun requirePromptSessionManager(): RealtimeSessionManager {
         val manager = sessionManager ?: throw IllegalStateException("Not connected")
         val state = manager.getConnectionState()
@@ -303,26 +347,26 @@ class RealTimeClient(
     }
 
     private fun handlePromptError(error: Exception) {
-        logger.error("Realtime prompt error", mapOf("error" to error.message))
+        handleMutationError("Realtime prompt error", error)
+    }
+
+    private fun requireSessionManager(): RealtimeSessionManager =
+        sessionManager ?: throw IllegalStateException("Not connected")
+
+    private fun handleMutationError(message: String, error: Exception) {
+        logger.error(message, mapOf("error" to error.message))
         _errors.tryEmit(ErrorClassifier.classifyWebrtcError(error))
     }
 
-    suspend fun setImage(
-        imageBase64: String?,
-        prompt: String? = null,
-        enhance: Boolean? = null,
-        timeout: Long = 30_000L,
-    ) {
-        val manager = sessionManager ?: throw IllegalStateException("Not connected")
-        manager.setImage(
-            imageBase64,
-            SignalingChannel.SetImageOptions(
-                prompt = prompt,
-                enhance = enhance,
-                timeout = timeout,
-            ),
-        )
-    }
+    private fun setImageOptions(
+        prompt: String?,
+        enhance: Boolean?,
+        timeout: Long,
+    ): SignalingChannel.SetImageOptions = SignalingChannel.SetImageOptions(
+        prompt = prompt,
+        enhance = enhance,
+        timeout = timeout,
+    )
 
     fun isConnected(): Boolean = sessionManager?.isConnected() ?: false
 
