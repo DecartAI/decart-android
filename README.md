@@ -247,9 +247,9 @@ Typed input helpers:
 | `connect(options)` | Connect to a model, join the returned LiveKit room, and publish the camera by default |
 | `disconnect()` | End the current session |
 | `setPrompt(prompt, enhance, timeoutMs)` | **suspend** — update the prompt and wait for the server ack; throws on ack failure, timeout (default 15s), or disconnect |
-| `setPromptAsync(prompt, enhance, timeoutMs)` | Starts the prompt update immediately and returns `Deferred<Unit>`; call `await()` to observe ack failure, timeout, or disconnect. Unawaited failures are emitted through `errors` |
+| `setPromptAsync(prompt, enhance, timeoutMs)` | Starts the prompt update immediately and returns `Deferred<Unit>`; call `await()` to observe ack failure, timeout, or disconnect |
 | `setImage(imageBase64, prompt, enhance, timeout)` | **suspend** — set a reference image and optional prompt, then wait for the server ack; throws on ack failure, timeout (default 30s), or disconnect |
-| `setImageAsync(imageBase64, prompt, enhance, timeout)` | Starts the image/prompt update immediately and returns `Deferred<Unit>`; call `await()` to observe ack failure, timeout, or disconnect. Unawaited failures are emitted through `errors` |
+| `setImageAsync(imageBase64, prompt, enhance, timeout)` | Starts the image/prompt update immediately and returns `Deferred<Unit>`; call `await()` to observe ack failure, timeout, or disconnect |
 | `release()` | Release all resources |
 
 **Observable State:**

@@ -8,7 +8,6 @@ import ai.decart.sdk.NoopLogger
 import ai.decart.sdk.RealtimeModel
 import ai.decart.sdk.realtime.livekit.LocalStreamFactory
 import android.content.Context
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -255,21 +254,13 @@ class RealTimeClient(
         timeoutMs: Long = 15_000L,
     ) {
         val manager = requirePromptSessionManager()
-        try {
-            manager.setPrompt(prompt = prompt, enhance = enhance, timeoutMs = timeoutMs)
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (error: Exception) {
-            handlePromptError(error)
-            throw error
-        }
+        manager.setPrompt(prompt = prompt, enhance = enhance, timeoutMs = timeoutMs)
     }
 
     /**
      * Start a prompt update immediately and return a wait handle for the server
      * ack. Call `await()` on the returned [Deferred] to observe ack failure,
-     * timeout, send failure, or websocket disconnect. If the [Deferred] is not
-     * awaited, failures are still emitted through [errors].
+     * timeout, send failure, or websocket disconnect.
      */
     fun setPromptAsync(
         prompt: String,
@@ -278,14 +269,7 @@ class RealTimeClient(
     ): Deferred<Unit> {
         val manager = requirePromptSessionManager()
         return scope.async {
-            try {
-                manager.setPrompt(prompt = prompt, enhance = enhance, timeoutMs = timeoutMs)
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (error: Exception) {
-                handlePromptError(error)
-                throw error
-            }
+            manager.setPrompt(prompt = prompt, enhance = enhance, timeoutMs = timeoutMs)
         }
     }
 
@@ -305,17 +289,10 @@ class RealTimeClient(
         timeout: Long = 30_000L,
     ) {
         val manager = requireSessionManager()
-        try {
-            manager.setImage(
-                imageBase64,
-                setImageOptions(prompt = prompt, enhance = enhance, timeout = timeout),
-            )
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (error: Exception) {
-            handleMutationError("Realtime image error", error)
-            throw error
-        }
+        manager.setImage(
+            imageBase64,
+            setImageOptions(prompt = prompt, enhance = enhance, timeout = timeout),
+        )
     }
 
     /**
@@ -323,8 +300,7 @@ class RealTimeClient(
      * the server ack. This also covers the optional [prompt] and [enhance]
      * values carried by the set-image request. Call `await()` on the returned
      * [Deferred] to observe ack failure, timeout, send failure, or websocket
-     * disconnect. If the [Deferred] is not awaited, failures are still emitted
-     * through [errors].
+     * disconnect.
      */
     fun setImageAsync(
         imageBase64: String?,
@@ -335,14 +311,7 @@ class RealTimeClient(
         val manager = requireSessionManager()
         val options = setImageOptions(prompt = prompt, enhance = enhance, timeout = timeout)
         return scope.async {
-            try {
-                manager.setImage(imageBase64, options)
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (error: Exception) {
-                handleMutationError("Realtime image error", error)
-                throw error
-            }
+            manager.setImage(imageBase64, options)
         }
     }
 
@@ -355,17 +324,8 @@ class RealTimeClient(
         return manager
     }
 
-    private fun handlePromptError(error: Exception) {
-        handleMutationError("Realtime prompt error", error)
-    }
-
     private fun requireSessionManager(): RealtimeSessionManager =
         sessionManager ?: throw IllegalStateException("Not connected")
-
-    private fun handleMutationError(message: String, error: Exception) {
-        logger.error(message, mapOf("error" to error.message))
-        _errors.tryEmit(ErrorClassifier.classifyWebrtcError(error))
-    }
 
     private fun setImageOptions(
         prompt: String?,
