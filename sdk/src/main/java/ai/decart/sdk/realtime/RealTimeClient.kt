@@ -39,6 +39,10 @@ enum class Resolution(val value: String) {
  * and passing it in, so preview and publish share a single LiveKit Room.
  * If [localStream] is null and [publishCamera] is true the SDK opens one
  * internally and disposes it on disconnect.
+ *
+ * @param publishMicrophone Ignored. Audio publishing is not supported in the
+ * Android LiveKit publisher yet; this property is retained for 0.7 source
+ * compatibility.
  */
 data class ConnectOptions @JvmOverloads constructor(
     val model: RealtimeModel,
@@ -135,13 +139,16 @@ class RealTimeClient(
      * returned stream's LiveKit Room and must [RealtimeMediaStream.dispose]
      * it. Delegates to the static factory so preview can be built before
      * a [RealTimeClient] exists.
+     *
+     * @param includeMicrophone Ignored. Audio publishing is not supported in
+     * the Android LiveKit publisher yet; this parameter is retained for 0.7
+     * source compatibility.
      */
     @JvmOverloads
     fun createLocalVideoStream(
         width: Int,
         height: Int,
         facing: FacingMode = FacingMode.FRONT,
-        // Reserved for future audio publishing support; currently ignored.
         includeMicrophone: Boolean = false,
         configuration: RealtimeConfiguration = RealtimeConfiguration(),
     ): RealtimeMediaStream {
@@ -157,11 +164,17 @@ class RealTimeClient(
         return stream
     }
 
+    /**
+     * Build a preview-ready [RealtimeMediaStream] sized for [model].
+     *
+     * @param includeMicrophone Ignored. Audio publishing is not supported in
+     * the Android LiveKit publisher yet; this parameter is retained for 0.7
+     * source compatibility.
+     */
     @JvmOverloads
     fun createLocalVideoStream(
         model: RealtimeModel,
         facing: FacingMode = FacingMode.FRONT,
-        // Reserved for future audio publishing support; currently ignored.
         includeMicrophone: Boolean = false,
         configuration: RealtimeConfiguration = RealtimeConfiguration(),
     ): RealtimeMediaStream = createLocalVideoStream(
@@ -232,37 +245,66 @@ class RealTimeClient(
     }
 
     /**
-     * Update the prompt immediately and return a wait handle for the server ack.
-     * Callers may ignore the returned [Deferred], or call `await()` to observe
-     * ack failure, timeout, send failure, or websocket disconnect.
+     * Update the prompt and suspend until the server acks. Throws on ack
+     * failure, timeout, send failure, or websocket disconnect.
      */
-    fun setPrompt(
+    suspend fun setPrompt(
+        prompt: String,
+        enhance: Boolean = true,
+        timeoutMs: Long = 15_000L,
+    ) {
+        val manager = requirePromptSessionManager()
+        try {
+            manager.setPrompt(prompt = prompt, enhance = enhance, timeoutMs = timeoutMs)
+        } catch (error: Exception) {
+            handlePromptError(error)
+            throw error
+        }
+    }
+
+    /**
+     * Start a prompt update immediately and return a wait handle for the server
+     * ack. Call `await()` on the returned [Deferred] to observe ack failure,
+     * timeout, send failure, or websocket disconnect. If the [Deferred] is not
+     * awaited, failures are still emitted through [errors].
+     */
+    fun setPromptAsync(
         prompt: String,
         enhance: Boolean = true,
         timeoutMs: Long = 15_000L,
     ): Deferred<Unit> {
-        val manager = sessionManager ?: throw IllegalStateException("Not connected")
-        val state = manager.getConnectionState()
-        if (state != ConnectionState.CONNECTED && state != ConnectionState.GENERATING) {
-            throw IllegalStateException("Cannot send message: connection is $state")
-        }
+        val manager = requirePromptSessionManager()
         return scope.async {
             try {
                 manager.setPrompt(prompt = prompt, enhance = enhance, timeoutMs = timeoutMs)
             } catch (error: Exception) {
-                logger.error("Realtime prompt error", mapOf("error" to error.message))
-                _errors.tryEmit(ErrorClassifier.classifyWebrtcError(error))
+                handlePromptError(error)
                 throw error
             }
         }
     }
 
+    @Deprecated("Use setPrompt(...); it now suspends until the server ack, matching the 0.7 API.", ReplaceWith("setPrompt(prompt, enhance, timeoutMs)"))
     suspend fun setPromptAndAwaitAck(
         prompt: String,
         enhance: Boolean = true,
         timeoutMs: Long = 15_000L,
     ) {
-        setPrompt(prompt = prompt, enhance = enhance, timeoutMs = timeoutMs).await()
+        setPrompt(prompt = prompt, enhance = enhance, timeoutMs = timeoutMs)
+    }
+
+    private fun requirePromptSessionManager(): RealtimeSessionManager {
+        val manager = sessionManager ?: throw IllegalStateException("Not connected")
+        val state = manager.getConnectionState()
+        if (state != ConnectionState.CONNECTED && state != ConnectionState.GENERATING) {
+            throw IllegalStateException("Cannot send message: connection is $state")
+        }
+        return manager
+    }
+
+    private fun handlePromptError(error: Exception) {
+        logger.error("Realtime prompt error", mapOf("error" to error.message))
+        _errors.tryEmit(ErrorClassifier.classifyWebrtcError(error))
     }
 
     suspend fun setImage(
@@ -293,6 +335,10 @@ class RealTimeClient(
         /**
          * Stateless preview-track factory: callers can build a preview
          * before they've decided which `apiKey` to use.
+         *
+         * @param includeMicrophone Ignored. Audio publishing is not supported
+         * in the Android LiveKit publisher yet; this parameter is retained for
+         * 0.7 source compatibility.
          */
         @JvmStatic
         @JvmOverloads
@@ -301,7 +347,6 @@ class RealTimeClient(
             width: Int,
             height: Int,
             facing: FacingMode = FacingMode.FRONT,
-            // Reserved for future audio publishing support; currently ignored.
             includeMicrophone: Boolean = false,
             configuration: RealtimeConfiguration = RealtimeConfiguration(),
             logger: Logger = NoopLogger,
@@ -314,13 +359,19 @@ class RealTimeClient(
             logger = logger,
         )
 
+        /**
+         * Stateless preview-track factory sized for [model].
+         *
+         * @param includeMicrophone Ignored. Audio publishing is not supported
+         * in the Android LiveKit publisher yet; this parameter is retained for
+         * 0.7 source compatibility.
+         */
         @JvmStatic
         @JvmOverloads
         fun createLocalVideoStream(
             context: android.content.Context,
             model: RealtimeModel,
             facing: FacingMode = FacingMode.FRONT,
-            // Reserved for future audio publishing support; currently ignored.
             includeMicrophone: Boolean = false,
             configuration: RealtimeConfiguration = RealtimeConfiguration(),
             logger: Logger = NoopLogger,

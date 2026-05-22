@@ -1,6 +1,8 @@
 package ai.decart.sdk.realtime
 
 import io.livekit.android.room.Room
+import io.livekit.android.room.track.AudioTrack
+import io.livekit.android.room.track.LocalAudioTrack
 import io.livekit.android.room.track.LocalVideoTrack
 import io.livekit.android.room.track.VideoTrack
 
@@ -11,13 +13,25 @@ import io.livekit.android.room.track.VideoTrack
  */
 data class RealtimeMediaStream(
     val videoTrack: VideoTrack? = null,
+    /**
+     * Audio is not supported in the Android LiveKit publisher yet.
+     * SDK-created streams always set this to null, and caller-provided audio
+     * tracks are ignored for publishing. Retained for 0.7 source compatibility.
+     */
+    @Deprecated("Audio tracks are not supported in the Android LiveKit publisher yet; this property is always null for SDK-created streams.")
+    val audioTrack: AudioTrack? = null,
     val id: String,
     val room: Room? = null,
 ) {
     /** Safe to call multiple times; best-effort on each underlying resource. */
+    @Suppress("DEPRECATION")
     fun dispose() {
         (videoTrack as? LocalVideoTrack)?.let { track ->
             try { track.stopCapture() } catch (_: Exception) {}
+            try { track.stop() } catch (_: Exception) {}
+            try { track.dispose() } catch (_: Exception) {}
+        }
+        (audioTrack as? LocalAudioTrack)?.let { track ->
             try { track.stop() } catch (_: Exception) {}
             try { track.dispose() } catch (_: Exception) {}
         }

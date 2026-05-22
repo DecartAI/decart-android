@@ -38,7 +38,7 @@ Add the dependency to your app's `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("com.github.DecartAI:decart-android:0.7.0")
+    implementation("com.github.DecartAI:decart-android:0.7.1")
 }
 ```
 
@@ -68,15 +68,16 @@ realtime.connect(
     ),
 )
 
-// 2. Change prompt during session. The call starts immediately.
-val promptAck = realtime.setPrompt("a sunny beach scene", enhance = true)
-
-// Optional: wait for the server ack, mirroring JS Promise usage.
+// 2. Change prompt during session and wait for the server ack.
 try {
-    promptAck.await()
+    realtime.setPrompt("a sunny beach scene", enhance = true)
 } catch (e: Exception) {
     // ack failure, timeout, or websocket disconnect
 }
+
+// Or start immediately and keep a Deferred if you want JS Promise-style usage.
+val promptAck = realtime.setPromptAsync("a sunny beach scene", enhance = true)
+promptAck.await()
 
 // 3. Disconnect when done
 realtime.disconnect()
@@ -95,6 +96,10 @@ realtime.remoteStreamUpdates.collect { stream ->
     stream.videoTrack?.addRenderer(remoteRenderer)
 }
 ```
+
+### Realtime audio support
+
+The Android LiveKit realtime publisher currently supports video only. `publishMicrophone`, `includeMicrophone`, and `RealtimeMediaStream.audioTrack` are retained for 0.7 source compatibility, but they are deprecated and ignored; SDK-created streams always expose `audioTrack = null`.
 
 ### Output resolution
 
@@ -241,8 +246,8 @@ Typed input helpers:
 |--------|-------------|
 | `connect(options)` | Connect to a model, join the returned LiveKit room, and publish the camera by default |
 | `disconnect()` | End the current session |
-| `setPrompt(prompt, enhance, timeoutMs)` | Starts the prompt update immediately and returns `Deferred<Unit>`; call `await()` to observe ack failure, timeout (default 15s), or disconnect |
-| `setPromptAndAwaitAck(prompt, enhance, timeoutMs)` | **suspend** — convenience wrapper around `setPrompt(...).await()` |
+| `setPrompt(prompt, enhance, timeoutMs)` | **suspend** — update the prompt and wait for the server ack; throws on ack failure, timeout (default 15s), or disconnect |
+| `setPromptAsync(prompt, enhance, timeoutMs)` | Starts the prompt update immediately and returns `Deferred<Unit>`; call `await()` to observe ack failure, timeout, or disconnect. Unawaited failures are emitted through `errors` |
 | `setImage(imageBase64, prompt, enhance, timeout)` | **suspend** — set a reference image; throws on ack failure, timeout (default 30s), or disconnect |
 | `release()` | Release all resources |
 
