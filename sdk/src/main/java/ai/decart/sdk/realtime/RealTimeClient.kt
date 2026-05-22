@@ -8,6 +8,7 @@ import ai.decart.sdk.NoopLogger
 import ai.decart.sdk.RealtimeModel
 import ai.decart.sdk.realtime.livekit.LocalStreamFactory
 import android.content.Context
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -256,6 +257,8 @@ class RealTimeClient(
         val manager = requirePromptSessionManager()
         try {
             manager.setPrompt(prompt = prompt, enhance = enhance, timeoutMs = timeoutMs)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
         } catch (error: Exception) {
             handlePromptError(error)
             throw error
@@ -277,6 +280,8 @@ class RealTimeClient(
         return scope.async {
             try {
                 manager.setPrompt(prompt = prompt, enhance = enhance, timeoutMs = timeoutMs)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
             } catch (error: Exception) {
                 handlePromptError(error)
                 throw error
@@ -305,6 +310,8 @@ class RealTimeClient(
                 imageBase64,
                 setImageOptions(prompt = prompt, enhance = enhance, timeout = timeout),
             )
+        } catch (cancellation: CancellationException) {
+            throw cancellation
         } catch (error: Exception) {
             handleMutationError("Realtime image error", error)
             throw error
@@ -330,6 +337,8 @@ class RealTimeClient(
         return scope.async {
             try {
                 manager.setImage(imageBase64, options)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
             } catch (error: Exception) {
                 handleMutationError("Realtime image error", error)
                 throw error
