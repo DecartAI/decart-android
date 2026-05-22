@@ -17,3 +17,6 @@
 *.bak
 *.swp
 .DS_Store
+
+# Local agent context, intentionally not committed.
+/CONTEXT.md

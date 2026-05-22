@@ -7,17 +7,24 @@ import io.livekit.android.room.track.LocalVideoTrack
 import io.livekit.android.room.track.VideoTrack
 
 /**
- * Local or remote media stream. For caller-owned streams [room] is the
+ * Local or remote video media stream. For caller-owned streams [room] is the
  * LiveKit Room that owns the tracks and is reused for the session connect;
  * call [dispose] when done.
  */
 data class RealtimeMediaStream(
     val videoTrack: VideoTrack? = null,
+    /**
+     * Audio is not supported in the Android LiveKit publisher yet.
+     * SDK-created streams always set this to null, and caller-provided audio
+     * tracks are ignored for publishing. Retained for 0.7 source compatibility.
+     */
+    @Deprecated("Audio tracks are not supported in the Android LiveKit publisher yet; this property is always null for SDK-created streams.")
     val audioTrack: AudioTrack? = null,
     val id: String,
     val room: Room? = null,
 ) {
     /** Safe to call multiple times; best-effort on each underlying resource. */
+    @Suppress("DEPRECATION")
     fun dispose() {
         (videoTrack as? LocalVideoTrack)?.let { track ->
             try { track.stopCapture() } catch (_: Exception) {}

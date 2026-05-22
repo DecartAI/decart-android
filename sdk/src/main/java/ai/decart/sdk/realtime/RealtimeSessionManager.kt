@@ -7,7 +7,6 @@ import ai.decart.sdk.RealtimeModel
 import ai.decart.sdk.realtime.livekit.LiveKitMediaChannel
 import ai.decart.sdk.realtime.livekit.LocalStreamFactory
 import android.content.Context
-import io.livekit.android.room.track.LocalAudioTrack
 import io.livekit.android.room.track.LocalVideoTrack
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -40,7 +39,6 @@ internal data class RealtimeSessionConfig(
     val initialImage: String? = null,
     val initialPrompt: InitialPrompt? = null,
     val publishCamera: Boolean = true,
-    val publishMicrophone: Boolean = false,
     val facing: FacingMode = FacingMode.FRONT,
     val onDiagnostic: DiagnosticEmitter? = null,
     val onLocalStream: (RealtimeMediaStream) -> Unit,
@@ -323,7 +321,6 @@ internal class RealtimeSessionManager(
             width = config.model.width,
             height = config.model.height,
             facing = config.facing,
-            includeMicrophone = config.publishMicrophone,
             logger = logger,
         )
         sdkOwnedLocalStream = stream
@@ -543,10 +540,6 @@ internal class RealtimeSessionManager(
         sdkOwnedLocalStream = null
         (stream.videoTrack as? LocalVideoTrack)?.let { track ->
             try { track.stopCapture() } catch (_: Exception) {}
-            try { track.stop() } catch (_: Exception) {}
-            try { track.dispose() } catch (_: Exception) {}
-        }
-        (stream.audioTrack as? LocalAudioTrack)?.let { track ->
             try { track.stop() } catch (_: Exception) {}
             try { track.dispose() } catch (_: Exception) {}
         }
