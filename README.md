@@ -38,7 +38,7 @@ Add the dependency to your app's `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("com.github.DecartAI:decart-android:0.7.1")
+    implementation("com.github.DecartAI:decart-android:0.7.2")
 }
 ```
 
@@ -100,6 +100,18 @@ realtime.remoteStreamUpdates.collect { stream ->
 ### Realtime audio support
 
 The Android LiveKit realtime publisher currently supports video only. `publishMicrophone`, `includeMicrophone`, and `RealtimeMediaStream.audioTrack` are retained for 0.7 source compatibility, but they are deprecated and ignored; SDK-created streams always expose `audioTrack = null`.
+
+
+### Realtime camera sizing and codec
+
+Use the model registry to size camera input instead of hardcoding dimensions:
+
+```kotlin
+val model = RealtimeModels.LUCY_2_1
+val localStream = realtime.createLocalVideoStream(model) // uses model.width/model.height
+```
+
+The Lucy 2.1 realtime model configs use `1088x624`. The default LiveKit publisher codec is VP8; override it only when needed via `RealtimeConfiguration.VideoConfig(preferredCodec = ...)`.
 
 ### Output resolution
 
@@ -195,9 +207,9 @@ client.queue.submit(VideoModels.LUCY_RESTYLE_2, restyle)
 
 | Model | Constant | Resolution | FPS |
 |-------|----------|-----------|-----|
-| Lucy 2.1 | `RealtimeModels.LUCY_2_1` | 1088x626 | 30 |
-| Lucy 2.1 VTON | `RealtimeModels.LUCY_2_1_VTON` | 1088x626 | 30 |
-| Lucy VTON 2 | `RealtimeModels.LUCY_VTON_2` | 1088x626 | 30 |
+| Lucy 2.1 | `RealtimeModels.LUCY_2_1` | 1088x624 | 30 |
+| Lucy 2.1 VTON | `RealtimeModels.LUCY_2_1_VTON` | 1088x624 | 30 |
+| Lucy VTON 2 | `RealtimeModels.LUCY_VTON_2` | 1088x624 | 30 |
 | Lucy Restyle 2 | `RealtimeModels.LUCY_RESTYLE_2` | 1280x704 | 30 |
 
 ### Batch Video Models
