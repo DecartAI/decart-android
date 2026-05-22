@@ -50,7 +50,7 @@ internal data class RealtimeSessionConfig(
     val onGenerationTick: (GenerationTickMessage) -> Unit,
     val onGenerationEnded: (GenerationEndedMessage) -> Unit,
     val onQueuePosition: (QueuePositionMessage) -> Unit,
-    val onError: (Exception) -> Unit,
+    val onError: (Exception, String?) -> Unit,
 )
 
 internal class RealtimeSessionManager(
@@ -444,7 +444,7 @@ internal class RealtimeSessionManager(
     }
 
     private fun handleSignalingError(error: Exception, source: String?) {
-        config.onError(error)
+        config.onError(error, source)
         if (RealtimeRetryPolicy.isPermanentError(error.message)) {
             permanentError = true
             logger.error(
@@ -496,6 +496,7 @@ internal class RealtimeSessionManager(
                 IllegalStateException(
                     "Cannot auto-reconnect a caller-provided LiveKit Room; create a new local stream and connect again",
                 ),
+                "livekit",
             )
             return
         }

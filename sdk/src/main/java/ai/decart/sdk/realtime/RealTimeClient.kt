@@ -198,9 +198,9 @@ class RealTimeClient(
                 onGenerationTick = { tick -> _generationTicks.tryEmit(tick) },
                 onGenerationEnded = { ended -> _generationEnded.tryEmit(ended) },
                 onQueuePosition = { qp -> _queuePositionUpdates.tryEmit(qp) },
-                onError = { error ->
+                onError = { error, source ->
                     logger.error("Realtime error", mapOf("error" to error.message))
-                    _errors.tryEmit(ErrorClassifier.classifyWebrtcError(error))
+                    _errors.tryEmit(ErrorClassifier.classifyWebrtcError(error, source))
                 },
             ),
         )

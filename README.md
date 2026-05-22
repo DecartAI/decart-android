@@ -187,9 +187,9 @@ client.queue.submit(VideoModels.LUCY_RESTYLE_2, restyle)
 
 | Model | Constant | Resolution | FPS |
 |-------|----------|-----------|-----|
-| Lucy 2.1 | `RealtimeModels.LUCY_2_1` | 1088x624 | 30 |
-| Lucy 2.1 VTON | `RealtimeModels.LUCY_2_1_VTON` | 1088x624 | 30 |
-| Lucy VTON 2 | `RealtimeModels.LUCY_VTON_2` | 1088x624 | 30 |
+| Lucy 2.1 | `RealtimeModels.LUCY_2_1` | 1088x626 | 30 |
+| Lucy 2.1 VTON | `RealtimeModels.LUCY_2_1_VTON` | 1088x626 | 30 |
+| Lucy VTON 2 | `RealtimeModels.LUCY_VTON_2` | 1088x626 | 30 |
 | Lucy Restyle 2 | `RealtimeModels.LUCY_RESTYLE_2` | 1280x704 | 30 |
 
 ### Batch Video Models

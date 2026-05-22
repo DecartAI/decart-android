@@ -1,5 +1,6 @@
 package ai.decart.sdk.realtime
 
+import ai.decart.sdk.BuildConfig
 import ai.decart.sdk.ConnectionState
 import ai.decart.sdk.Logger
 import ai.decart.sdk.NoopLogger
@@ -287,7 +288,7 @@ internal class SignalingChannel(
 
     private fun String.withUserAgent(): String {
         val separator = if (contains("?")) "&" else "?"
-        val userAgent = URLEncoder.encode("decart-android-sdk/0.0.1", "UTF-8")
+        val userAgent = URLEncoder.encode("decart-android-sdk/${BuildConfig.SDK_VERSION}", "UTF-8")
         return "$this${separator}user_agent=$userAgent"
     }
 }

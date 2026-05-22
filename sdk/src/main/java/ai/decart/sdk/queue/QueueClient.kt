@@ -1,5 +1,6 @@
 package ai.decart.sdk.queue
 
+import ai.decart.sdk.BuildConfig
 import ai.decart.sdk.Logger
 import ai.decart.sdk.VideoModel
 import android.content.ContentResolver
@@ -437,7 +438,7 @@ class QueueClient internal constructor(
         else -> "file"
     }
 
-    private fun buildUserAgent(): String = "decart-android-sdk/$SDK_VERSION lang/kotlin"
+    private fun buildUserAgent(): String = "decart-android-sdk/${BuildConfig.SDK_VERSION} lang/kotlin"
 
     /**
      * [RequestBody] wrapper that reports write progress to an [UploadProgressListener].
@@ -477,7 +478,5 @@ class QueueClient internal constructor(
         /** Initial delay before first poll (matches reference SDKs). */
         private const val INITIAL_DELAY_MS = 500L
 
-        /** SDK version reported in User-Agent header. */
-        internal const val SDK_VERSION = "0.3.0"
     }
 }
