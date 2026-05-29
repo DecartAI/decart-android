@@ -38,7 +38,7 @@ Add the dependency to your app's `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("com.github.DecartAI:decart-android:0.7.2")
+    implementation("com.github.DecartAI:decart-android:0.7.3")
 }
 ```
 
