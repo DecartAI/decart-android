@@ -54,8 +54,32 @@ data class ConnectOptions @JvmOverloads constructor(
     @Deprecated("Audio publishing is not supported in the Android LiveKit publisher yet; this option is ignored.")
     val publishMicrophone: Boolean = false,
     val facing: FacingMode = FacingMode.FRONT,
+    val mirror: MirrorMode = MirrorMode.AUTO,
     val onRemoteStream: ((RealtimeMediaStream) -> Unit)? = null,
-)
+) {
+    constructor(
+        model: RealtimeModel,
+        initialPrompt: InitialPrompt? = null,
+        initialImage: String? = null,
+        resolution: Resolution? = null,
+        realtimeConfiguration: RealtimeConfiguration = RealtimeConfiguration(),
+        publishCamera: Boolean = true,
+        publishMicrophone: Boolean = false,
+        facing: FacingMode = FacingMode.FRONT,
+        onRemoteStream: ((RealtimeMediaStream) -> Unit)? = null,
+    ) : this(
+        model = model,
+        initialPrompt = initialPrompt,
+        initialImage = initialImage,
+        resolution = resolution,
+        realtimeConfiguration = realtimeConfiguration,
+        publishCamera = publishCamera,
+        publishMicrophone = publishMicrophone,
+        facing = facing,
+        mirror = MirrorMode.AUTO,
+        onRemoteStream = onRemoteStream,
+    )
+}
 
 internal fun buildWebrtcUrl(
     baseUrl: String,
@@ -143,6 +167,8 @@ class RealTimeClient(
      * @param includeMicrophone Ignored. Audio publishing is not supported in
      * the Android LiveKit publisher yet; this parameter is retained for 0.7
      * source compatibility.
+     * @param mirror Pre-flip captured video before sending it. Defaults to
+     * [MirrorMode.AUTO], which mirrors the front camera only.
      */
     @JvmOverloads
     fun createLocalVideoStream(
@@ -151,6 +177,7 @@ class RealTimeClient(
         facing: FacingMode = FacingMode.FRONT,
         includeMicrophone: Boolean = false,
         configuration: RealtimeConfiguration = RealtimeConfiguration(),
+        mirror: MirrorMode = MirrorMode.AUTO,
     ): RealtimeMediaStream {
         val stream = createLocalVideoStream(
             context = context,
@@ -159,6 +186,7 @@ class RealTimeClient(
             facing = facing,
             configuration = configuration,
             logger = logger,
+            mirror = mirror,
         )
         _localStreamUpdates.tryEmit(stream)
         return stream
@@ -170,6 +198,8 @@ class RealTimeClient(
      * @param includeMicrophone Ignored. Audio publishing is not supported in
      * the Android LiveKit publisher yet; this parameter is retained for 0.7
      * source compatibility.
+     * @param mirror Pre-flip captured video before sending it. Defaults to
+     * [MirrorMode.AUTO], which mirrors the front camera only.
      */
     @JvmOverloads
     fun createLocalVideoStream(
@@ -177,11 +207,13 @@ class RealTimeClient(
         facing: FacingMode = FacingMode.FRONT,
         includeMicrophone: Boolean = false,
         configuration: RealtimeConfiguration = RealtimeConfiguration(),
+        mirror: MirrorMode = MirrorMode.AUTO,
     ): RealtimeMediaStream = createLocalVideoStream(
         width = model.width,
         height = model.height,
         facing = facing,
         configuration = configuration,
+        mirror = mirror,
     )
 
     @JvmOverloads
@@ -209,6 +241,7 @@ class RealTimeClient(
                 initialPrompt = options.initialPrompt,
                 publishCamera = options.publishCamera,
                 facing = options.facing,
+                mirror = options.mirror,
                 onDiagnostic = { event ->
                     _diagnostics.tryEmit(event)
                     if (event is DiagnosticEvent.PublishStats) {
@@ -352,6 +385,8 @@ class RealTimeClient(
          * @param includeMicrophone Ignored. Audio publishing is not supported
          * in the Android LiveKit publisher yet; this parameter is retained for
          * 0.7 source compatibility.
+         * @param mirror Pre-flip captured video before sending it. Defaults to
+         * [MirrorMode.AUTO], which mirrors the front camera only.
          */
         @JvmStatic
         @JvmOverloads
@@ -363,6 +398,7 @@ class RealTimeClient(
             includeMicrophone: Boolean = false,
             configuration: RealtimeConfiguration = RealtimeConfiguration(),
             logger: Logger = NoopLogger,
+            mirror: MirrorMode = MirrorMode.AUTO,
         ): RealtimeMediaStream = LocalStreamFactory.createCameraStream(
             context = context,
             configuration = configuration,
@@ -370,6 +406,7 @@ class RealTimeClient(
             height = height,
             facing = facing,
             logger = logger,
+            mirror = mirror,
         )
 
         /**
@@ -378,6 +415,8 @@ class RealTimeClient(
          * @param includeMicrophone Ignored. Audio publishing is not supported
          * in the Android LiveKit publisher yet; this parameter is retained for
          * 0.7 source compatibility.
+         * @param mirror Pre-flip captured video before sending it. Defaults to
+         * [MirrorMode.AUTO], which mirrors the front camera only.
          */
         @JvmStatic
         @JvmOverloads
@@ -388,6 +427,7 @@ class RealTimeClient(
             includeMicrophone: Boolean = false,
             configuration: RealtimeConfiguration = RealtimeConfiguration(),
             logger: Logger = NoopLogger,
+            mirror: MirrorMode = MirrorMode.AUTO,
         ): RealtimeMediaStream = createLocalVideoStream(
             context = context,
             width = model.width,
@@ -395,6 +435,7 @@ class RealTimeClient(
             facing = facing,
             configuration = configuration,
             logger = logger,
+            mirror = mirror,
         )
     }
 }
