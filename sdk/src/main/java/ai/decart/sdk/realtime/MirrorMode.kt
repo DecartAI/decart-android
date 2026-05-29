@@ -12,4 +12,10 @@ enum class MirrorMode {
     AUTO,
 }
 
+internal fun MirrorMode.shouldMirror(facing: FacingMode): Boolean = when (this) {
+    MirrorMode.OFF -> false
+    MirrorMode.ON -> true
+    MirrorMode.AUTO -> facing == FacingMode.FRONT
+}
+
 enum class FacingMode { FRONT, BACK }

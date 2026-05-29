@@ -50,6 +50,7 @@ import ai.decart.sdk.DecartClientConfig
 import ai.decart.sdk.realtime.ConnectOptions
 import ai.decart.sdk.realtime.FacingMode
 import ai.decart.sdk.realtime.InitialPrompt
+import ai.decart.sdk.realtime.MirrorMode
 import ai.decart.sdk.RealtimeModels
 
 val client = DecartClient(context, DecartClientConfig(apiKey = "your-api-key"))
@@ -61,6 +62,7 @@ realtime.connect(
         model = RealtimeModels.LUCY_RESTYLE_2,
         initialPrompt = InitialPrompt("a cyberpunk cityscape"),
         facing = FacingMode.FRONT,
+        mirror = MirrorMode.AUTO,
         publishCamera = true,
         onRemoteStream = { stream ->
             // Display stream.videoTrack with a LiveKit renderer.
@@ -112,6 +114,32 @@ val localStream = realtime.createLocalVideoStream(model) // uses model.width/mod
 ```
 
 The Lucy 2.1 realtime model configs use `1088x624`. The default LiveKit publisher codec is VP8; override it only when needed via `RealtimeConfiguration.VideoConfig(preferredCodec = ...)`.
+
+### Realtime camera mirroring
+
+Use `mirror` to pre-flip captured frames before they are sent to Decart. This is safer than flipping the rendered remote stream because server-baked pixels such as watermarks and overlays remain readable.
+
+```kotlin
+val localStream = realtime.createLocalVideoStream(
+    model = RealtimeModels.LUCY_2_1,
+    facing = FacingMode.FRONT,
+    mirror = MirrorMode.AUTO, // default: front camera mirrored, back camera unmodified
+)
+```
+
+When capture mirroring is enabled, render both local previews and remote streams as-is; do not also set renderer-level mirroring for those tracks.
+
+You can also set the same behavior for SDK-owned camera capture:
+
+```kotlin
+realtime.connect(
+    ConnectOptions(
+        model = RealtimeModels.LUCY_2_1,
+        facing = FacingMode.FRONT,
+        mirror = MirrorMode.AUTO,
+    )
+)
+```
 
 ### Output resolution
 
@@ -239,6 +267,7 @@ Typed input helpers:
 | `ConnectOptions` | Connection parameters (model, LiveKit stream callbacks, initial prompt) |
 | `InitialPrompt` | Initial prompt with optional enhancement |
 | `Resolution` | Output resolution enum (`P720`, `P1080`) for `ConnectOptions.resolution` |
+| `MirrorMode` | Camera-input mirroring enum (`OFF`, `ON`, `AUTO`) |
 | `ConnectionState` | Connection lifecycle enum (`DISCONNECTED`, `CONNECTING`, `CONNECTED`, `GENERATING`, `RECONNECTING`) |
 | `RealtimeModels` | Available AI model definitions |
 | `VideoModels` | Available batch video model definitions |

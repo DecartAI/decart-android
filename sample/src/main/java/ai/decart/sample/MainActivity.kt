@@ -267,7 +267,6 @@ class MainActivity : ComponentActivity() {
                         trackReference = localStream?.toTrackReference(Track.Source.CAMERA),
                         videoTrack = localStream?.videoTrack,
                         room = localStream?.room,
-                        mirror = true,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }

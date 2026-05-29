@@ -40,6 +40,7 @@ internal data class RealtimeSessionConfig(
     val initialPrompt: InitialPrompt? = null,
     val publishCamera: Boolean = true,
     val facing: FacingMode = FacingMode.FRONT,
+    val mirror: MirrorMode = MirrorMode.AUTO,
     val onDiagnostic: DiagnosticEmitter? = null,
     val onLocalStream: (RealtimeMediaStream) -> Unit,
     val onRemoteStream: (RealtimeMediaStream) -> Unit,
@@ -322,6 +323,7 @@ internal class RealtimeSessionManager(
             height = config.model.height,
             facing = config.facing,
             logger = logger,
+            mirror = config.mirror,
         )
         sdkOwnedLocalStream = stream
         config.onLocalStream(stream)
