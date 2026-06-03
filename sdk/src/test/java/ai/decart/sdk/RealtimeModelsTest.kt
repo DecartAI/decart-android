@@ -7,7 +7,7 @@ class RealtimeModelsTest {
 
     @Test
     fun `all models have correct count`() {
-        assertEquals(7, RealtimeModels.all.size)
+        assertEquals(8, RealtimeModels.all.size)
     }
 
     @Test
@@ -15,6 +15,7 @@ class RealtimeModelsTest {
         assertEquals(RealtimeModels.LUCY_2_1, RealtimeModels.fromName("lucy-2.1"))
         assertEquals(RealtimeModels.LUCY_2_1_VTON, RealtimeModels.fromName("lucy-2.1-vton"))
         assertEquals(RealtimeModels.LUCY_VTON_2, RealtimeModels.fromName("lucy-vton-2"))
+        assertEquals(RealtimeModels.LUCY_VTON_3, RealtimeModels.fromName("lucy-vton-3"))
         assertEquals(RealtimeModels.LUCY_RESTYLE_2, RealtimeModels.fromName("lucy-restyle-2"))
     }
 
@@ -63,6 +64,7 @@ class RealtimeModelsTest {
             RealtimeModels.LUCY_2_1,
             RealtimeModels.LUCY_2_1_VTON,
             RealtimeModels.LUCY_VTON_2,
+            RealtimeModels.LUCY_VTON_3,
             RealtimeModels.LUCY_LATEST,
             RealtimeModels.LUCY_VTON_LATEST,
         ).forEach { model ->
