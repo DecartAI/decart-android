@@ -259,6 +259,7 @@ internal class RealtimeSessionManager(
 
         val roomInfo = signaling.sendLiveKitJoin(
             config.realtimeConfiguration.connection.connectionTimeoutMs,
+            initialState = initialState,
         )
 
         if (disposed) {
@@ -268,7 +269,7 @@ internal class RealtimeSessionManager(
 
         // Initial-state ack and LiveKit room connect run in parallel,
         // gated by waitForReadiness before publishing local tracks.
-        val initialStateAckDeferred = scope.async { sendInitialState(signaling, initialState) }
+        val initialStateAckDeferred = scope.async { awaitInitialStateAck(signaling, initialState) }
         val connectStart = System.nanoTime()
         coroutineScope {
             val mediaConnect = async {
@@ -348,37 +349,29 @@ internal class RealtimeSessionManager(
         return null
     }
 
-    private suspend fun sendInitialState(
+    private suspend fun awaitInitialStateAck(
         signaling: SignalingChannel,
         initialState: InitialState?,
     ) {
-        if (initialState == null) return
         val timeoutMs = config.realtimeConfiguration.connection.connectionTimeoutMs
+        if (initialState == null) {
+            signaling.awaitInitialStateAck(null, timeoutMs)
+            return
+        }
         when {
             initialState.image != null -> {
                 val imageStart = System.nanoTime()
-                signaling.setImage(
-                    initialState.image,
-                    SignalingChannel.SetImageOptions(
-                        prompt = initialState.prompt,
-                        enhance = initialState.enhance,
-                        timeout = timeoutMs,
-                    ),
-                )
+                signaling.awaitInitialStateAck(initialState, timeoutMs)
                 emitPhase(ConnectionPhase.AVATAR_IMAGE, imageStart, success = true)
             }
             initialState.prompt != null -> {
                 val promptStart = System.nanoTime()
-                signaling.sendPrompt(
-                    initialState.prompt,
-                    initialState.enhance ?: true,
-                    timeoutMs,
-                )
+                signaling.awaitInitialStateAck(initialState, timeoutMs)
                 emitPhase(ConnectionPhase.INITIAL_PROMPT, promptStart, success = true)
             }
             else -> {
                 val passthroughStart = System.nanoTime()
-                signaling.setImage(null, SignalingChannel.SetImageOptions(timeout = timeoutMs))
+                signaling.awaitInitialStateAck(initialState, timeoutMs)
                 emitPhase(ConnectionPhase.INITIAL_PROMPT, passthroughStart, success = true)
             }
         }
