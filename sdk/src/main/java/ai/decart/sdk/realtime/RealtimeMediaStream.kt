@@ -23,6 +23,14 @@ data class RealtimeMediaStream(
     val id: String,
     val room: Room? = null,
 ) {
+    /**
+     * Glass-to-glass seq tracker for this stream's pixel-marker stamp pipeline.
+     * Set by the SDK when a stream is created with `debugQuality = true`; the
+     * media channel reads it to wire the marker reader + latency snapshot.
+     * Internal and excluded from `equals`/`copy` (declared in the class body).
+     */
+    internal var seqTracker: SeqTracker? = null
+
     /** Safe to call multiple times; best-effort on each underlying resource. */
     @Suppress("DEPRECATION")
     fun dispose() {

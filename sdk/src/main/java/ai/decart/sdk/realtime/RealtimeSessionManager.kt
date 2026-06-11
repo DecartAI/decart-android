@@ -41,6 +41,7 @@ internal data class RealtimeSessionConfig(
     val publishCamera: Boolean = true,
     val facing: FacingMode = FacingMode.FRONT,
     val mirror: MirrorMode = MirrorMode.AUTO,
+    val debugQuality: Boolean = false,
     val onDiagnostic: DiagnosticEmitter? = null,
     val onLocalStream: (RealtimeMediaStream) -> Unit,
     val onRemoteStream: (RealtimeMediaStream) -> Unit,
@@ -148,6 +149,12 @@ internal class RealtimeSessionManager(
 
     fun getConnectionState(): ConnectionState = managerState
 
+    fun getConnectionQuality(): ConnectionQualityReport? = mediaChannel?.currentConnectionQuality()
+
+    fun getGlassToGlass(): G2GMetrics? = mediaChannel?.currentGlassToGlass()
+
+    fun isPathRelayed(): Boolean? = mediaChannel?.currentPathRelayed()
+
     private suspend fun <T> runWithRetry(
         attemptCycle: Int,
         block: suspend (attempt: Int) -> T,
@@ -243,6 +250,26 @@ internal class RealtimeSessionManager(
 
         val localStream = ensureLocalStream()
 
+        // Glass-to-glass (opt-in): the local stream carries the seq tracker when
+        // debugQuality is on. Wire it to the channel (marker reader + snapshot) and
+        // start the TTFF clock for this attempt (resets prior measurement state).
+        // The connect-level debugQuality (which sets the server `pixel_latency` flag)
+        // must match whether the stream actually stamps — warn on a mismatch so a
+        // caller-provided stream created without debugQuality doesn't silently no-op.
+        val streamStamps = localStream?.seqTracker != null
+        if (config.debugQuality != streamStamps) {
+            logger.warn(
+                "glass-to-glass debugQuality mismatch; measurement will not work",
+                mapOf(
+                    "connectDebugQuality" to config.debugQuality,
+                    "streamStamps" to streamStamps,
+                    "hint" to "set debugQuality consistently on connect() and createLocalVideoStream()",
+                ),
+            )
+        }
+        media.enableGlassToGlass(localStream?.seqTracker)
+        localStream?.seqTracker?.markStart(monotonicMs())
+
         val initialState = getInitialState()
         val gateAttempt = initialStateGate.startAttempt(initialState)
         remoteStreamGateOpen = !gateAttempt.shouldWait
@@ -324,6 +351,7 @@ internal class RealtimeSessionManager(
             facing = config.facing,
             logger = logger,
             mirror = config.mirror,
+            debugQuality = config.debugQuality,
         )
         sdkOwnedLocalStream = stream
         config.onLocalStream(stream)

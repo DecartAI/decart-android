@@ -149,13 +149,18 @@ class MainActivity : ComponentActivity() {
         var connectionState by remember { mutableStateOf(ConnectionState.DISCONNECTED) }
         var modelMenuExpanded by remember { mutableStateOf(false) }
         var statusMessage by remember { mutableStateOf("Ready") }
+        var connectionQuality by remember { mutableStateOf<ConnectionQualityReport?>(null) }
+        var connectivityResult by remember { mutableStateOf<ConnectivityReport?>(null) }
+        var checkingConnectivity by remember { mutableStateOf(false) }
+        // Opt-in glass-to-glass measurement (visible pixel marker, diagnostic only).
+        var measureG2g by remember { mutableStateOf(false) }
 
         // Local preview is created lazily, independent of `apiKey` so typing
         // the API key does not churn LiveKit Rooms (each Room owns a native
         // PeerConnectionFactory + EglBase + capturer).
         // It is keyed only on the selected model's capture resolution.
         var localStream by remember { mutableStateOf<RealtimeMediaStream?>(null) }
-        LaunchedEffect(selectedModel) {
+        LaunchedEffect(selectedModel, measureG2g) {
             localStream?.dispose()
             localStream = null
             try {
@@ -164,6 +169,7 @@ class MainActivity : ComponentActivity() {
                     model = selectedModel,
                     facing = FacingMode.FRONT,
                     logger = AndroidLogger(LogLevel.DEBUG),
+                    debugQuality = measureG2g,
                 )
             } catch (e: Exception) {
                 Log.e("DecartSample", "Failed to start local preview", e)
@@ -208,6 +214,12 @@ class MainActivity : ComponentActivity() {
                     localStream = stream
                     remoteStream = null
                 }
+            }
+        }
+        LaunchedEffect(client) {
+            val c = client ?: return@LaunchedEffect
+            c.connectionQuality.collectLatest { report ->
+                connectionQuality = report
             }
         }
         LaunchedEffect(client) {
@@ -301,6 +313,45 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
+            // In-session connection quality badge
+            connectionQuality?.let { q ->
+                val qColor = q.quality.toColor()
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(shape = RoundedCornerShape(16.dp), color = qColor.copy(alpha = 0.2f)) {
+                        Text(
+                            q.quality.name + if (q.warmingUp) " (warming up)" else "",
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                            color = qColor,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                    val detail = buildList {
+                        if (q.limitingFactor != ConnectionQualityLimitingFactor.NONE) {
+                            add("limited by ${q.limitingFactor.name.lowercase()}")
+                        }
+                        q.metrics.ttffMs?.let { add("ttff ${"%.1f".format(it / 1000)}s") }
+                        q.metrics.g2gMs?.let { add("g2g ${it.toInt()}ms") }
+                        q.metrics.rttMs?.let { add("rtt ${it.toInt()}ms") }
+                        q.metrics.fps?.let { add("${it.toInt()}fps") }
+                        q.metrics.packetLoss?.let { add("loss ${"%.1f".format(it * 100)}%") }
+                        q.metrics.g2gDropRatio?.let { add("drops ${"%.1f".format(it * 100)}%") }
+                        q.metrics.upstreamJitterMs?.let { add("↑jitter ${it.toInt()}ms") }
+                        q.metrics.availableUpstreamKbps?.let { add("↑${it.toInt()}kbps") }
+                    }.joinToString("  ·  ")
+                    if (detail.isNotEmpty()) {
+                        Text(
+                            detail,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
             // Model selector
             ExposedDropdownMenuBox(
                 expanded = modelMenuExpanded,
@@ -370,6 +421,24 @@ class MainActivity : ComponentActivity() {
                 Switch(checked = enhancePrompt, onCheckedChange = { enhancePrompt = it })
             }
 
+            // Glass-to-glass measurement (diagnostic; stamps a visible marker bottom-left).
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Measure glass-to-glass (visible marker; diagnostic)",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Switch(
+                    checked = measureG2g,
+                    onCheckedChange = { measureG2g = it },
+                    enabled = !isConnected && connectionState != ConnectionState.CONNECTING,
+                )
+            }
+
             // Connect/Disconnect
             Button(
                 onClick = {
@@ -386,6 +455,7 @@ class MainActivity : ComponentActivity() {
                         localStream?.dispose()
                         localStream = null
                         remoteStream = null
+                        connectionQuality = null
                         statusMessage = "Disconnected"
                         connectionState = ConnectionState.DISCONNECTED
                         coroutineScope.launch {
@@ -395,6 +465,7 @@ class MainActivity : ComponentActivity() {
                                     model = selectedModel,
                                     facing = FacingMode.FRONT,
                                     logger = AndroidLogger(LogLevel.DEBUG),
+                                    debugQuality = measureG2g,
                                 )
                             } catch (e: Exception) {
                                 Log.e("DecartSample", "Failed to restart preview", e)
@@ -437,6 +508,7 @@ class MainActivity : ComponentActivity() {
                                         facing = FacingMode.FRONT,
                                         publishCamera = true,
                                         publishMicrophone = false,
+                                        debugQuality = measureG2g,
                                     ),
                                     localStream = preview,
                                 )
@@ -459,6 +531,107 @@ class MainActivity : ComponentActivity() {
                         "Disconnect" else "Connect"
                 )
             }
+
+            // Connectivity preflight — gauge the network before showing/connecting the integration.
+            OutlinedButton(
+                onClick = {
+                    if (apiKey.isBlank()) {
+                        statusMessage = "Please enter an API key"
+                        return@OutlinedButton
+                    }
+                    checkingConnectivity = true
+                    connectivityResult = null
+                    coroutineScope.launch {
+                        val probe = RealTimeClient(
+                            context = context,
+                            config = RealTimeClientConfig(apiKey = apiKey, logger = AndroidLogger(LogLevel.WARN)),
+                        )
+                        try {
+                            connectivityResult = probe.checkConnectivity()
+                        } catch (e: Exception) {
+                            statusMessage = "Connectivity check failed: ${e.message}"
+                        } finally {
+                            probe.release()
+                            checkingConnectivity = false
+                        }
+                    }
+                },
+                enabled = !checkingConnectivity,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (checkingConnectivity) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                } else {
+                    Text("Check Connectivity (STUN)")
+                }
+            }
+
+            // Deep probe — briefly opens a real session to measure true glass-to-glass latency.
+            OutlinedButton(
+                onClick = {
+                    if (apiKey.isBlank()) {
+                        statusMessage = "Please enter an API key"
+                        return@OutlinedButton
+                    }
+                    checkingConnectivity = true
+                    connectivityResult = null
+                    coroutineScope.launch {
+                        val probe = RealTimeClient(
+                            context = context,
+                            config = RealTimeClientConfig(apiKey = apiKey, logger = AndroidLogger(LogLevel.WARN)),
+                        )
+                        try {
+                            connectivityResult = probe.checkConnectivity(
+                                CheckConnectivityOptions(deep = true, model = selectedModel),
+                            )
+                        } catch (e: Exception) {
+                            statusMessage = "Deep probe failed: ${e.message}"
+                        } finally {
+                            probe.release()
+                            checkingConnectivity = false
+                        }
+                    }
+                },
+                enabled = !checkingConnectivity && !isConnected,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Deep Probe (measure glass-to-glass)")
+            }
+
+            connectivityResult?.let { report ->
+                val cColor = report.quality.toColor()
+                Surface(color = cColor.copy(alpha = 0.15f), shape = RoundedCornerShape(8.dp)) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            "Connectivity: ${report.quality.name}",
+                            color = cColor,
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        val metricsLine = buildList {
+                            add("transport=${report.metrics.transport.name.lowercase()}")
+                            add("rtt=${report.metrics.rttMs?.let { "${it}ms" } ?: "n/a"}")
+                            report.metrics.ttffMs?.let { add("ttff=${"%.1f".format(it / 1000)}s") }
+                            report.metrics.g2gMs?.let { add("g2g=${it.toInt()}ms") }
+                            report.metrics.g2gDropRatio?.let { add("drops=${"%.1f".format(it * 100)}%") }
+                            report.metrics.sampleCount?.let { add("samples=$it") }
+                        }.joinToString("   ")
+                        Text(
+                            metricsLine,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        report.reasons.forEach { reason ->
+                            Text("• $reason", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+
+            // Bottom spacing for scroll
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 
@@ -852,6 +1025,13 @@ class MainActivity : ComponentActivity() {
             Spacer(modifier = Modifier.height(16.dp))
         }
     }
+}
+
+private fun ConnectionQuality.toColor(): Color = when (this) {
+    ConnectionQuality.GOOD -> Color(0xFF4CAF50)
+    ConnectionQuality.FAIR -> Color(0xFFC9A227)
+    ConnectionQuality.POOR -> Color(0xFFFF9800)
+    ConnectionQuality.CRITICAL -> Color(0xFFF44336)
 }
 
 private fun RealtimeMediaStream.toTrackReference(defaultSource: Track.Source): TrackReference? {

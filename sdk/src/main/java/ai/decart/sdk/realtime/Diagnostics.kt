@@ -102,6 +102,11 @@ sealed class DiagnosticEvent {
     data class VideoStall(val data: VideoStallEvent) : DiagnosticEvent()
     data class FirstFrame(val data: FirstFrameEvent) : DiagnosticEvent()
     data class PublishStats(val data: PublishStatsEvent) : DiagnosticEvent()
+    /**
+     * Interpreted connection-quality report, one per stats sample (~every few
+     * seconds). The `quality` level inside is debounced; the metrics are live.
+     */
+    data class ConnectionQualitySample(val data: ConnectionQualityReport) : DiagnosticEvent()
 }
 
 typealias DiagnosticEmitter = (DiagnosticEvent) -> Unit
