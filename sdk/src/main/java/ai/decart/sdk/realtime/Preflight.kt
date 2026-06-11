@@ -127,6 +127,10 @@ internal fun classifyConnectivity(
     return ConnectivityReport(quality = quality, metrics = metrics, reasons = reasons)
 }
 
+/** Render a 0..1 fraction as a percentage, trimming trailing zeros (0.001 → "0.1", 0.03 → "3"). */
+private fun formatPercent(fraction: Double): String =
+    "%.1f".format(fraction * 100).removeSuffix(".0")
+
 /**
  * Classify a deep-probe result. Judges startup (TTFF) and steady-state
  * (mid-stream glass-to-glass) latency separately — both are real experienced
@@ -189,7 +193,7 @@ internal fun classifyActiveProbe(
         val q = scoreLowerBetter(drop, d.good, d.fair, d.poor)
         dims += q
         if (q != ConnectionQuality.GOOD) {
-            reasons += "End-to-end frame drop ratio is ${"%.1f".format(drop * 100)}% (good ≤ ${(d.good * 100).toInt()}%)."
+            reasons += "End-to-end frame drop ratio is ${formatPercent(drop)}% (good ≤ ${formatPercent(d.good)}%)."
         }
     }
 
@@ -198,7 +202,7 @@ internal fun classifyActiveProbe(
         val q = scoreLowerBetter(loss, l.good, l.fair, l.poor)
         dims += q
         if (q != ConnectionQuality.GOOD) {
-            reasons += "Upstream packet loss is ${"%.1f".format(loss * 100)}% (good ≤ ${(l.good * 100).toInt()}%)."
+            reasons += "Upstream packet loss is ${formatPercent(loss)}% (good ≤ ${formatPercent(l.good)}%)."
         }
     }
 

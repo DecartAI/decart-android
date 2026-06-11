@@ -55,8 +55,8 @@ class ConnectionQualityScoringTest {
     }
 
     @Test
-    fun `a few percent loss reads as fair, not critical`() {
-        assertEquals(ConnectionQuality.FAIR, scoreSnapshot(makeSignals(fractionLost = 0.03)).quality)
+    fun `a few percent loss reads as poor, not critical`() {
+        assertEquals(ConnectionQuality.POOR, scoreSnapshot(makeSignals(fractionLost = 0.03)).quality)
     }
 
     @Test
@@ -141,7 +141,7 @@ class ConnectionQualityScoringTest {
     @Test
     fun `flags a high end-to-end frame drop ratio as a stall problem`() {
         val result = scoreSnapshot(makeSignals(g2gDropRatio = 0.2))
-        assertEquals(ConnectionQuality.CRITICAL, result.quality) // 20% > poor band (10%)
+        assertEquals(ConnectionQuality.CRITICAL, result.quality) // 20% > poor band (5%)
         assertEquals(ConnectionQualityLimitingFactor.STALL, result.limitingFactor)
     }
 

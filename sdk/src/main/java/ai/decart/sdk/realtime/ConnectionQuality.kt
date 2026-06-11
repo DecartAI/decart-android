@@ -117,8 +117,10 @@ data class ConnectionQualityThresholds(
             // Startup latency (connect → first rendered frame); judged separately,
             // an order of magnitude larger than steady state.
             ttff = MsBand(goodMs = 4_000.0, fairMs = 6_000.0, poorMs = 10_000.0),
-            loss = Loss(good = 0.02, fair = 0.05, poor = 0.1),
-            g2gDrop = Loss(good = 0.02, fair = 0.05, poor = 0.1),
+            // Tightened for a real-time v2v pipeline (JS SDK #161): up to 2% loss
+            // reading "good" under-reported genuinely degraded sessions.
+            loss = Loss(good = 0.001, fair = 0.01, poor = 0.05),
+            g2gDrop = Loss(good = 0.001, fair = 0.01, poor = 0.05),
             upstream = Upstream(goodRatio = 1.0, fairRatio = 0.8, poorRatio = 0.5, requiredUpstreamKbps = 3500.0),
             stall = Stall(goodFps = 20.0, fairFps = 12.0, poorFps = 5.0),
         )
