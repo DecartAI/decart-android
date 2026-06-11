@@ -9,21 +9,56 @@ import livekit.org.webrtc.JavaI420Buffer
 import livekit.org.webrtc.VideoFrame
 import livekit.org.webrtc.VideoProcessor
 import livekit.org.webrtc.VideoSink
+import livekit.org.webrtc.YuvHelper
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Outgoing-frame processor for the opt-in glass-to-glass measurement. Optionally
- * mirrors (front camera) and, when a [SeqTracker] is set, stamps a monotonic
- * sequence marker into the bottom-left of each frame's luma (Y) plane — the same
- * marker the server re-stamps onto its output so the client can read true
- * camera→display latency back off the rendered frames.
+ * Rotate an I420 buffer so the image is upright (consumes the frame's rotation).
+ * Camera buffers arrive in sensor orientation with rotation metadata; the marker
+ * protocol operates in *display* space, so stamping/reading must happen on the
+ * upright image. Uses libyuv via [YuvHelper.I420Rotate] (single packed dst).
+ */
+internal fun rotateI420ToUpright(src: VideoFrame.I420Buffer, rotation: Int): VideoFrame.I420Buffer {
+    val rw = if (rotation % 180 == 0) src.width else src.height
+    val rh = if (rotation % 180 == 0) src.height else src.width
+    val cw = (rw + 1) / 2
+    val ch = (rh + 1) / 2
+    val ySize = rw * rh
+    val cSize = cw * ch
+    // Packed layout YuvHelper writes: Y, then U, then V — strides rw / cw / cw.
+    val packed = ByteBuffer.allocateDirect(ySize + 2 * cSize)
+    YuvHelper.I420Rotate(
+        src.dataY, src.strideY,
+        src.dataU, src.strideU,
+        src.dataV, src.strideV,
+        packed, src.width, src.height,
+        rotation,
+    )
+    packed.position(0)
+    packed.limit(ySize)
+    val y = packed.slice()
+    packed.position(ySize)
+    packed.limit(ySize + cSize)
+    val u = packed.slice()
+    packed.position(ySize + cSize)
+    packed.limit(ySize + 2 * cSize)
+    val v = packed.slice()
+    return JavaI420Buffer.wrap(rw, rh, y, rw, u, cw, v, cw, null)
+}
+
+/**
+ * Outgoing-frame processor for the opt-in glass-to-glass measurement. Uprights
+ * each frame (consuming camera rotation), optionally mirrors (front camera) and,
+ * when a [SeqTracker] is set, stamps a monotonic sequence marker into the
+ * bottom-left of the **display-oriented** luma (Y) plane — the same place the
+ * server's `pixel_latency` mode reads it. Verified against the live server:
+ * rotation-0 sources round-trip; rotated camera buffers must be uprighted first
+ * or the server never finds the marker.
  *
- * Stamping needs CPU pixel access, so frames always go through an I420 copy here
- * (the texture fast-path is skipped). Used only when `debugQuality` is on, so the
- * normal mirror/no-processor paths are unaffected. The marker is stamped in raw
- * I420 **buffer space** (bottom-left of the sensor buffer, pre-rotation) — see the
- * SDK notes; verify placement on-device against the server's `pixel_latency` reader.
+ * Stamping needs CPU pixel access, so frames always go through an I420
+ * copy/rotate here (the texture fast-path is skipped). Used only when
+ * `debugQuality` is on, so the normal mirror/no-processor paths are unaffected.
  */
 internal class StampingVideoProcessor(
     private val mirror: Boolean,
@@ -67,14 +102,18 @@ internal class StampingVideoProcessor(
     private fun transform(frame: VideoFrame): VideoFrame? = runCatching {
         val i420 = frame.buffer.toI420() ?: return@runCatching null
         try {
-            val verticalAxis = isPerpendicularRotation(frame.rotation)
-            val base: VideoFrame.I420Buffer = when {
-                mirror && verticalAxis -> flipI420Vertical(i420)
-                mirror -> flipI420Horizontal(i420)
-                else -> copyI420(i420)
+            // Upright first: the marker must sit at the *display* bottom-left,
+            // and after uprighting a display-horizontal mirror is simply a
+            // buffer-horizontal flip.
+            val rotation = ((frame.rotation % 360) + 360) % 360
+            val upright = if (rotation == 0) copyI420(i420) else rotateI420ToUpright(i420, rotation)
+            val base: VideoFrame.I420Buffer = if (mirror) {
+                val flipped = flipI420Horizontal(upright)
+                upright.release()
+                flipped
+            } else {
+                upright
             }
-            // Stamp the marker into the bottom-left of the (post-mirror) Y plane so
-            // the server reads it from the frame it actually receives.
             tracker?.let { t ->
                 val seq = t.stampNext(monotonicMs())
                 val dataY = base.dataY
@@ -91,18 +130,14 @@ internal class StampingVideoProcessor(
                     )
                 }
             }
-            VideoFrame(base, frame.rotation, frame.timestampNs)
+            // Rotation was consumed by the upright step.
+            VideoFrame(base, 0, frame.timestampNs)
         } finally {
             i420.release()
         }
     }.getOrNull()
 
     private companion object {
-        fun isPerpendicularRotation(rotationDegrees: Int): Boolean {
-            val normalized = ((rotationDegrees % 360) + 360) % 360
-            return normalized % 180 != 0
-        }
-
         fun copyI420(src: VideoFrame.I420Buffer): VideoFrame.I420Buffer {
             val width = src.width
             val height = src.height
@@ -139,18 +174,6 @@ internal class StampingVideoProcessor(
             return dst
         }
 
-        fun flipI420Vertical(src: VideoFrame.I420Buffer): VideoFrame.I420Buffer {
-            val width = src.width
-            val height = src.height
-            val chromaWidth = (width + 1) / 2
-            val chromaHeight = (height + 1) / 2
-            val dst = JavaI420Buffer.allocate(width, height)
-            flipPlaneVertical(src.dataY, src.strideY, dst.dataY, dst.strideY, width, height)
-            flipPlaneVertical(src.dataU, src.strideU, dst.dataU, dst.strideU, chromaWidth, chromaHeight)
-            flipPlaneVertical(src.dataV, src.strideV, dst.dataV, dst.strideV, chromaWidth, chromaHeight)
-            return dst
-        }
-
         fun flipPlaneHorizontal(src: ByteBuffer, srcStride: Int, dst: ByteBuffer, dstStride: Int, width: Int, height: Int) {
             val srcView = src.duplicate()
             val dstView = dst.duplicate()
@@ -168,18 +191,6 @@ internal class StampingVideoProcessor(
                     j--
                 }
                 dstView.position(y * dstStride)
-                dstView.put(row, 0, width)
-            }
-        }
-
-        fun flipPlaneVertical(src: ByteBuffer, srcStride: Int, dst: ByteBuffer, dstStride: Int, width: Int, height: Int) {
-            val srcView = src.duplicate()
-            val dstView = dst.duplicate()
-            val row = ByteArray(width)
-            for (y in 0 until height) {
-                srcView.position(y * srcStride)
-                srcView.get(row, 0, width)
-                dstView.position((height - 1 - y) * dstStride)
                 dstView.put(row, 0, width)
             }
         }

@@ -530,8 +530,9 @@ internal class LiveKitMediaChannel(
 
     /**
      * Reads the pixel marker off each rendered remote frame's luma (Y) plane and
-     * feeds matches to the [SeqTracker]. Reads in raw I420 buffer space (bottom-left),
-     * symmetric with [StampingVideoProcessor]; verify against the server on-device.
+     * feeds matches to the [SeqTracker]. The marker lives in *display* space, so
+     * rotated frames are uprighted first (server output is normally rotation-0;
+     * verified live — the rotation-0 path round-trips against the real server).
      */
     private class MarkerReaderSink(private val tracker: SeqTracker) : VideoSink {
         override fun onFrame(frame: VideoFrame?) {
@@ -542,12 +543,18 @@ internal class LiveKitMediaChannel(
                 null
             } ?: return
             try {
-                val dataY = i420.dataY
-                val strideY = i420.strideY
-                val seq = PixelMarker.read(i420.width, i420.height) { x, y ->
-                    dataY.get(y * strideY + x).toInt() and 0xff
+                val rotation = ((frame.rotation % 360) + 360) % 360
+                val upright = if (rotation == 0) i420 else rotateI420ToUpright(i420, rotation)
+                try {
+                    val dataY = upright.dataY
+                    val strideY = upright.strideY
+                    val seq = PixelMarker.read(upright.width, upright.height) { x, y ->
+                        dataY.get(y * strideY + x).toInt() and 0xff
+                    }
+                    if (seq != null) tracker.recordInbound(seq, monotonicMs())
+                } finally {
+                    if (upright !== i420) upright.release()
                 }
-                if (seq != null) tracker.recordInbound(seq, monotonicMs())
             } finally {
                 i420.release()
             }
