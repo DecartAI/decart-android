@@ -383,7 +383,15 @@ internal class LiveKitMediaChannel(
             is RoomEvent.Connected -> {
                 _connectionStateUpdates.tryEmit(ConnectionState.CONNECTED)
             }
-            is RoomEvent.Reconnecting -> _connectionStateUpdates.tryEmit(ConnectionState.RECONNECTING)
+            is RoomEvent.Reconnecting -> {
+                // LiveKit reconnects in-place (this channel + stats loop survive), so
+                // reset the quality evaluator the way the SDK-level reconnect does by
+                // recreating the channel — otherwise the still-running stats loop would
+                // re-emit the stale pre-reconnect verdict and skip a fresh warm-up.
+                qualityEvaluator.reset()
+                lastFreezeCount = null
+                _connectionStateUpdates.tryEmit(ConnectionState.RECONNECTING)
+            }
             is RoomEvent.Reconnected -> _connectionStateUpdates.tryEmit(ConnectionState.CONNECTED)
             is RoomEvent.Disconnected -> {
                 logger.warn(
