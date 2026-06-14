@@ -114,9 +114,8 @@ internal class SeqTracker {
     fun snapshot(): G2GMetrics {
         val sorted = latencies.sorted()
         val n = sorted.size
-        // True median: average the two middle samples on an even count (nearest-rank
-        // would bias high and can tip a verdict near a band threshold). p90 stays
-        // nearest-rank (the standard percentile convention).
+        // Median averages the two middle samples on an even count (nearest-rank
+        // would bias high near a band threshold); p90 uses nearest-rank.
         val medianMs: Double? = when {
             n == 0 -> null
             n % 2 == 0 -> Math.round((sorted[n / 2 - 1] + sorted[n / 2]) / 2).toDouble()

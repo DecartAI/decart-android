@@ -535,8 +535,7 @@ internal class LiveKitMediaChannel(
     /**
      * Reads the pixel marker off each rendered remote frame's luma (Y) plane and
      * feeds matches to the [SeqTracker]. The marker lives in *display* space, so
-     * rotated frames are uprighted first (server output is normally rotation-0;
-     * verified live — the rotation-0 path round-trips against the real server).
+     * rotated frames are uprighted first.
      */
     private class MarkerReaderSink(private val tracker: SeqTracker) : VideoSink {
         override fun onFrame(frame: VideoFrame?) {

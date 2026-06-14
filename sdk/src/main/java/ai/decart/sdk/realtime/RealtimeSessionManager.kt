@@ -250,12 +250,10 @@ internal class RealtimeSessionManager(
 
         val localStream = ensureLocalStream()
 
-        // Glass-to-glass (opt-in): the local stream carries the seq tracker when
-        // debugQuality is on. Wire it to the channel (marker reader + snapshot) and
-        // start the TTFF clock for this attempt (resets prior measurement state).
-        // The connect-level debugQuality (which sets the server `pixel_latency` flag)
-        // must match whether the stream actually stamps — warn on a mismatch so a
-        // caller-provided stream created without debugQuality doesn't silently no-op.
+        // Glass-to-glass (opt-in): wire the local stream's tracker to the channel and
+        // start this attempt's TTFF clock. connect-level debugQuality (the server
+        // `pixel_latency` flag) must agree with whether the stream actually stamps,
+        // or measurement silently no-ops — warn on a mismatch.
         val streamStamps = localStream?.seqTracker != null
         if (config.debugQuality != streamStamps) {
             logger.warn(

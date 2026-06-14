@@ -35,11 +35,7 @@ internal object PixelMarker {
     /** Physical pixels per logical pixel when stamping (native resolution). */
     private const val BLOCK_SIZE = 8
 
-    /**
-     * Candidate received block sizes, ordered by likelihood (nominal 8, no transport
-     * scaling). Smaller values appear when WebRTC BWE downscales; larger when the
-     * sender upscales pre-encode. Mirrors the server `_CANDIDATE_BLOCK_SIZES`.
-     */
+    /** Received block sizes to try, ordered by likelihood (transport may scale the frame). Mirrors server `_CANDIDATE_BLOCK_SIZES`. */
     private val CANDIDATE_BLOCK_SIZES = intArrayOf(8, 4, 6, 2, 12, 10, 16, 5, 7, 14, 3)
 
     /** Smallest frame that can hold the marker at nominal block size. */

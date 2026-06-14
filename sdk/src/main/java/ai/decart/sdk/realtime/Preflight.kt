@@ -86,10 +86,9 @@ internal object PreflightConfig {
     const val ACTIVE_MIN_SAMPLES = 5
 
     /**
-     * Extra budget on top of the sampling window to cover session establishment
-     * (one ~15s connect cycle + handshake overhead). The probe is hard-capped at
-     * `durationMs + this` — a preflight gate must not grind through the full
-     * reconnect/backoff cycle.
+     * Budget for session establishment, on top of the sampling window. The probe
+     * is hard-capped at `durationMs + this` so a preflight gate can't grind through
+     * the full reconnect/backoff cycle.
      */
     const val ACTIVE_CONNECT_BUDGET_MS = 20_000L
 }

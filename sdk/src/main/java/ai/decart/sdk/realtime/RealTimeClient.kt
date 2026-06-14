@@ -345,8 +345,8 @@ class RealTimeClient(
         return try {
             manager.connect(localStream)
         } catch (e: Throwable) {
-            // The attempt aborted; don't leave a stale verdict that getConnectionQuality()
-            // would keep returning until the next disconnect().
+            // Clear the verdict so getConnectionQuality() doesn't return a stale one
+            // from the aborted attempt.
             _connectionQuality.value = null
             throw e
         }

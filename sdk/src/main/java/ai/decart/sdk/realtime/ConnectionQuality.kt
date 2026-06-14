@@ -161,9 +161,8 @@ internal fun scoreMetrics(
     thresholds: ConnectionQualityThresholds,
     skipBitrate: Boolean = false,
 ): ScoreResult {
-    // Prefer measured glass-to-glass — the real experienced latency — when the
-    // opt-in pixel-marker measurement is active. It already includes both network
-    // legs, so relay headroom doesn't apply. Fall back to RTT otherwise.
+    // Prefer measured glass-to-glass when present; it includes both network legs,
+    // so relay headroom doesn't apply. Fall back to RTT otherwise.
     val relayExtra = if (signals.isRelayed) thresholds.rtt.relayExtraMs else 0.0
     val latency = if (signals.g2gMs != null) {
         scoreLowerBetter(
@@ -183,9 +182,9 @@ internal fun scoreMetrics(
 
     val loss = scoreLowerBetter(signals.fractionLost, thresholds.loss.good, thresholds.loss.fair, thresholds.loss.poor)
 
-    // Upstream only: available BWE ÷ the INTENDED publish bitrate. Dividing by the
-    // encoder's adaptive target would mask throttling (it drops with the uplink).
-    // Downstream bitrate is intentionally not scored — it's server-chosen.
+    // Available BWE ÷ the INTENDED publish bitrate — not the encoder's adaptive
+    // target, which drops with the uplink and would mask throttling. (Downstream
+    // bitrate is server-chosen, so not scored.)
     var bandwidth = ConnectionQuality.GOOD
     if (!skipBitrate) {
         val ratio = signals.availableOutgoingKbps?.let { it / thresholds.upstream.requiredUpstreamKbps }

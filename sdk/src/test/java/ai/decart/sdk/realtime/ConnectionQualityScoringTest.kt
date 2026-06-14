@@ -6,33 +6,6 @@ import org.junit.Test
 /** Port of the JS `scoreSnapshot` unit tests. */
 class ConnectionQualityScoringTest {
 
-    /** Build a signal set that scores "good" by default; override per test. */
-    private fun makeSignals(
-        rttMs: Double? = 50.0,
-        g2gMs: Double? = null,
-        ttffMs: Double? = null,
-        upstreamJitterMs: Double? = null,
-        fractionLost: Double? = 0.0,
-        g2gDropRatio: Double? = null,
-        availableOutgoingKbps: Double? = 4_000.0,
-        fps: Double? = 30.0,
-        freezeCountDelta: Double? = 0.0,
-        qualityLimitationReason: String? = "none",
-        isRelayed: Boolean = false,
-    ) = QualitySignals(
-        rttMs = rttMs,
-        g2gMs = g2gMs,
-        ttffMs = ttffMs,
-        upstreamJitterMs = upstreamJitterMs,
-        fractionLost = fractionLost,
-        g2gDropRatio = g2gDropRatio,
-        availableOutgoingKbps = availableOutgoingKbps,
-        fps = fps,
-        freezeCountDelta = freezeCountDelta,
-        qualityLimitationReason = qualityLimitationReason,
-        isRelayed = isRelayed,
-    )
-
     @Test
     fun `rates a healthy snapshot as good with no limiting factor`() {
         val result = scoreSnapshot(makeSignals())
