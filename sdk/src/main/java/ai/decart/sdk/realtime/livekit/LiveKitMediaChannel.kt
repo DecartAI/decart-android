@@ -385,11 +385,14 @@ internal class LiveKitMediaChannel(
             }
             is RoomEvent.Reconnecting -> {
                 // LiveKit reconnects in-place (this channel + stats loop survive), so
-                // reset the quality evaluator the way the SDK-level reconnect does by
+                // reset the quality state the way the SDK-level reconnect does by
                 // recreating the channel — otherwise the still-running stats loop would
                 // re-emit the stale pre-reconnect verdict and skip a fresh warm-up.
+                // Covers all three inputs: the evaluator, the freeze baseline, and the
+                // glass-to-glass tracker (markStart re-arms its TTFF clock + warm-up).
                 qualityEvaluator.reset()
                 lastFreezeCount = null
+                seqTracker?.markStart(monotonicMs())
                 _connectionStateUpdates.tryEmit(ConnectionState.RECONNECTING)
             }
             is RoomEvent.Reconnected -> _connectionStateUpdates.tryEmit(ConnectionState.CONNECTED)
