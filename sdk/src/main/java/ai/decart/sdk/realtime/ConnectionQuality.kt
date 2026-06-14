@@ -105,10 +105,14 @@ data class ConnectionQualityThresholds(
          * fps ~25–30). Values mirror the JS SDK's `config-realtime.ts`.
          */
         val DEFAULT = ConnectionQualityThresholds(
-            windowSamples = 5,
-            warmupSamples = 8,
-            downgradeConsecutive = 5,
-            upgradeConsecutive = 5,
+            // Sample COUNTS, scaled for Android's 3s stats cadence (LiveKitMediaChannel
+            // STATS_INTERVAL_MS) so they land on the same wall-clock as the JS SDK's
+            // raw counts at its 1s cadence: window ~9s, warm-up ~9s (JS 8s),
+            // downgrade/upgrade debounce ~6s (JS 5s).
+            windowSamples = 3,
+            warmupSamples = 3,
+            downgradeConsecutive = 2,
+            upgradeConsecutive = 2,
             rtt = Rtt(goodMs = 150.0, fairMs = 300.0, poorMs = 500.0, relayExtraMs = 100.0),
             // Steady-state glass-to-glass through the model (already includes both
             // network legs, so relay headroom does not apply). Anchored to server
