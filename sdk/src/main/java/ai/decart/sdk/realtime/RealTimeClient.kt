@@ -330,7 +330,15 @@ class RealTimeClient(
                     _remoteStreamUpdates.tryEmit(stream)
                     options.onRemoteStream?.invoke(stream)
                 },
-                onConnectionStateChange = { state -> _connectionState.value = state },
+                onConnectionStateChange = { state ->
+                    _connectionState.value = state
+                    // Leaving a live session (auto-reconnect or loss) invalidates the
+                    // verdict — clear it so getConnectionQuality() can't return a stale
+                    // one while the channel is torn down, until fresh samples arrive.
+                    if (state == ConnectionState.RECONNECTING || state == ConnectionState.DISCONNECTED) {
+                        _connectionQuality.value = null
+                    }
+                },
                 onSessionStarted = { started -> _sessionStarted.update { started } },
                 onGenerationTick = { tick -> _generationTicks.tryEmit(tick) },
                 onGenerationEnded = { ended -> _generationEnded.tryEmit(ended) },
