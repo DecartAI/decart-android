@@ -4,7 +4,6 @@ import ai.decart.sdk.ConnectionState
 import ai.decart.sdk.Logger
 import ai.decart.sdk.NoopLogger
 import ai.decart.sdk.realtime.ConnectionQualityEvaluator
-import ai.decart.sdk.realtime.ConnectionQualityReport
 import ai.decart.sdk.realtime.ConnectionQualityThresholds
 import ai.decart.sdk.realtime.DiagnosticEmitter
 import ai.decart.sdk.realtime.DiagnosticEvent
@@ -307,8 +306,6 @@ internal class LiveKitMediaChannel(
             id?.let { stats[it]?.members?.get("candidateType") as? String }
         return candidateTypeOf(localId) == "relay" || candidateTypeOf(remoteId) == "relay"
     }
-
-    fun currentConnectionQuality(): ConnectionQualityReport? = qualityEvaluator.current()
 
     /** Wire glass-to-glass measurement to the local stream's [tracker]; null disables it. */
     fun enableGlassToGlass(tracker: SeqTracker?) {

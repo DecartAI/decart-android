@@ -149,8 +149,6 @@ internal class RealtimeSessionManager(
 
     fun getConnectionState(): ConnectionState = managerState
 
-    fun getConnectionQuality(): ConnectionQualityReport? = mediaChannel?.currentConnectionQuality()
-
     fun getGlassToGlass(): G2GMetrics? = mediaChannel?.currentGlassToGlass()
 
     fun isPathRelayed(): Boolean? = mediaChannel?.currentPathRelayed()

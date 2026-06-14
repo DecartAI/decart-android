@@ -369,8 +369,7 @@ class RealTimeClient(
     }
 
     /** Latest interpreted in-session connection-quality verdict, or null if none yet. */
-    fun getConnectionQuality(): ConnectionQualityReport? =
-        sessionManager?.getConnectionQuality() ?: _connectionQuality.value
+    fun getConnectionQuality(): ConnectionQualityReport? = _connectionQuality.value
 
     /** Latest glass-to-glass snapshot (only populated under `debugQuality`), or null. */
     fun getGlassToGlass(): G2GMetrics? = sessionManager?.getGlassToGlass()
