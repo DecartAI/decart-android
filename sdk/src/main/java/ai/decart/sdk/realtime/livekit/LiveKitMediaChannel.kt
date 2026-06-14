@@ -69,7 +69,9 @@ internal class LiveKitMediaChannel(
     private var roomConnectedAtNs: Long = 0L
     private var publishStatsJob: Job? = null
     private val qualityEvaluator = ConnectionQualityEvaluator(qualityThresholds)
-    private var lastFreezeCount: Long = 0
+    // Null until the first inbound sample baselines the cumulative freeze counter,
+    // so the first delta is 0 (a fresh baseline) rather than the whole running total.
+    private var lastFreezeCount: Long? = null
 
     // Glass-to-glass (opt-in): set per connect when the local stream carries a tracker.
     private var seqTracker: SeqTracker? = null
@@ -124,7 +126,7 @@ internal class LiveKitMediaChannel(
         publishStatsJob = scope.launch {
             var lastBytesSent: Long = 0
             var lastFramesEncoded: Long = 0
-            lastFreezeCount = 0 // re-baseline the freeze delta when the loop (re)starts
+            lastFreezeCount = null // re-baseline the freeze delta when the loop (re)starts
             while (isActive) {
                 delay(STATS_INTERVAL_MS)
                 val report = try {
@@ -271,7 +273,9 @@ internal class LiveKitMediaChannel(
             if (kind != null && kind != "video") return@forEach
             (members["framesPerSecond"] as? Number)?.toDouble()?.let { fps = it }
             (members["freezeCount"] as? Number)?.toLong()?.let { freeze ->
-                freezeCountDelta = (freeze - lastFreezeCount).toDouble()
+                // First sample after (re)start only baselines — don't count the whole
+                // cumulative total as a freeze burst.
+                freezeCountDelta = lastFreezeCount?.let { (freeze - it).toDouble() } ?: 0.0
                 lastFreezeCount = freeze
             }
         }

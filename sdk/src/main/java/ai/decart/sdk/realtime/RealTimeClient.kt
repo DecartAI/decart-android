@@ -342,7 +342,14 @@ class RealTimeClient(
             ),
         )
         sessionManager = manager
-        return manager.connect(localStream)
+        return try {
+            manager.connect(localStream)
+        } catch (e: Throwable) {
+            // The attempt aborted; don't leave a stale verdict that getConnectionQuality()
+            // would keep returning until the next disconnect().
+            _connectionQuality.value = null
+            throw e
+        }
     }
 
     fun disconnect() {
