@@ -15,6 +15,7 @@ sealed interface SignalingMessage
 
 sealed interface ServerMessage : SignalingMessage
 sealed interface ClientMessage : SignalingMessage
+sealed interface InitialStateMessage : ClientMessage
 
 // Messages shared between server and client
 
@@ -90,21 +91,22 @@ data class QueuePositionMessage(
 
 // Client-only messages
 
-@Serializable
-object LiveKitJoinMessage : ClientMessage
+data class LiveKitJoinMessage(
+    @SerialName("initial_state") val initialState: InitialStateMessage?,
+) : ClientMessage
 
 @Serializable
 data class PromptMessage(
     val prompt: String,
     @SerialName("enhance_prompt") val enhancePrompt: Boolean
-) : ClientMessage
+) : ClientMessage, InitialStateMessage
 
 @Serializable
 data class SetImageMessage(
     @SerialName("image_data") val imageData: String?,
     val prompt: String? = null,
     @SerialName("enhance_prompt") val enhancePrompt: Boolean? = null
-) : ClientMessage
+) : ClientMessage, InitialStateMessage
 
 // Parser / Serializer
 
@@ -135,8 +137,10 @@ object SignalingMessageParser {
         }
     }
 
-    fun serialize(message: ClientMessage): String {
-        val jsonObject = when (message) {
+    fun serialize(message: ClientMessage): String = toJsonObject(message).toString()
+
+    private fun toJsonObject(message: ClientMessage): JsonObject {
+        return when (message) {
             is OfferMessage -> buildJsonObject {
                 put("type", "offer")
                 put("sdp", message.sdp)
@@ -153,8 +157,12 @@ object SignalingMessageParser {
                     put("candidate", JsonNull)
                 }
             }
-            LiveKitJoinMessage -> buildJsonObject {
+            is LiveKitJoinMessage -> buildJsonObject {
                 put("type", "livekit_join")
+                put(
+                    "initial_state",
+                    message.initialState?.let { toJsonObject(it) } ?: JsonNull,
+                )
             }
             is PromptMessage -> buildJsonObject {
                 put("type", "prompt")
@@ -176,6 +184,5 @@ object SignalingMessageParser {
                 }
             }
         }
-        return jsonObject.toString()
     }
 }
