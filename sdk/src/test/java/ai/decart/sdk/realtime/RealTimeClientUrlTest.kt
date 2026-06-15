@@ -30,6 +30,13 @@ class RealTimeClientUrlTest {
     }
 
     @Test
+    fun `omits pixel_latency by default and appends it when debugQuality`() {
+        assertFalse(buildWebrtcUrl(baseUrl, model, apiKey, resolution = null).contains("pixel_latency"))
+        val url = buildWebrtcUrl(baseUrl, model, apiKey, resolution = null, debugQuality = true)
+        assertTrue(url.contains("&pixel_latency=1"))
+    }
+
+    @Test
     fun `api key and model name are url-encoded`() {
         val weirdKey = "key with spaces&special=chars"
         val url = buildWebrtcUrl(baseUrl, model, weirdKey, resolution = null)

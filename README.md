@@ -157,6 +157,66 @@ realtime.connect(
 )
 ```
 
+### Connection quality
+
+Two layers, both on a shared `GOOD | FAIR | POOR | CRITICAL` scale — the SDK reports, you decide what to do (gate the UI, warn the user, etc.).
+
+**Preflight (before connecting).** A fast, network-only reachability check — a throwaway peer connection against public STUN, so there's no session and no cost:
+
+```kotlin
+import ai.decart.sdk.realtime.ConnectionQuality
+
+val report = realtime.checkConnectivity() // suspend
+// report.metrics: transport (UDP | RELAY | FAILED), rttMs
+if (report.quality == ConnectionQuality.CRITICAL) showFallbackUi(report.reasons)
+```
+
+**In-session quality.** While connected, the SDK derives a smoothed verdict from WebRTC stats (latency, packet loss, upstream bandwidth, frame rate) and tells you the limiting factor. Updates every stats sample (~few seconds) with fresh metrics; the level is debounced:
+
+```kotlin
+realtime.connect(
+    ConnectOptions(
+        model = RealtimeModels.LUCY_2_1,
+        onConnectionQuality = { report ->
+            // report.limitingFactor: BANDWIDTH | LATENCY | LOSS | STALL | CPU | NONE
+            // report.metrics: rttMs, fps, packetLoss, availableUpstreamKbps, ...
+        },
+        onRemoteStream = { /* ... */ },
+    )
+)
+
+// also a Flow + a getter:
+realtime.connectionQuality.collect { /* ConnectionQualityReport? */ }
+realtime.getConnectionQuality() // latest, or null before the first sample
+```
+
+**Glass-to-glass latency (opt-in, diagnostic).** Network RTT hides the dominant cost in real-time video — model inference — so a session can read GOOD while feeling laggy. Set `debugQuality = true` to measure the real camera→display latency: the SDK stamps a pixel marker into each outgoing frame and reads it back off the rendered output, surfacing startup (`ttffMs`) and steady-state (`g2gMs`) latency plus end-to-end drops (`g2gDropRatio`). When present, glass-to-glass drives the latency verdict instead of RTT.
+
+> ⚠️ Diagnostic only. The marker is **visible** (bottom-left of the published + rendered video) and adds per-frame pixel work — don't enable it for production/end-user sessions. With a caller-provided stream, build it via `createLocalVideoStream(..., debugQuality = true)` so the same `debugQuality` is set on both the stream and `connect()`.
+
+```kotlin
+realtime.connect(
+    ConnectOptions(
+        model = RealtimeModels.LUCY_2_1,
+        debugQuality = true,
+        onConnectionQuality = { report ->
+            // report.metrics.ttffMs / g2gMs / g2gDropRatio
+        },
+    )
+)
+```
+
+For a *measured* verdict before connecting (instead of the network-only check), use the **deep probe** — it briefly opens a real session with a synthetic source, measures glass-to-glass, then tears it down. It requires a `model` and costs a short GPU session:
+
+```kotlin
+import ai.decart.sdk.realtime.CheckConnectivityOptions
+
+val probe = realtime.checkConnectivity(
+    CheckConnectivityOptions(deep = true, model = RealtimeModels.LUCY_2_1),
+)
+// probe.metrics.g2gMs / ttffMs / g2gDropRatio
+```
+
 ### Batch Queue Example (Lucy 2 V2V)
 
 ```kotlin

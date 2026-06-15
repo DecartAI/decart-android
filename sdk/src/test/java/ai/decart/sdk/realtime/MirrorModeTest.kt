@@ -37,4 +37,28 @@ class MirrorModeTest {
         assertEquals(MirrorMode.AUTO, options.mirror)
         assertNotNull(options.onRemoteStream)
     }
+
+    @Test
+    fun `supports the legacy positional mirror + onRemoteStream constructor`() {
+        // Pre-debugQuality shape: onRemoteStream is the 10th positional arg, right
+        // after mirror. Passing the lambda positionally (not as a trailing lambda)
+        // forces the compatibility constructor — the primary's 10th param is a Boolean.
+        val callback: (RealtimeMediaStream) -> Unit = {}
+        val options = ConnectOptions(
+            RealtimeModels.LUCY_2_1,
+            null,
+            null,
+            null,
+            RealtimeConfiguration(),
+            true,
+            false,
+            FacingMode.FRONT,
+            MirrorMode.AUTO,
+            callback,
+        )
+
+        assertEquals(MirrorMode.AUTO, options.mirror)
+        assertNotNull(options.onRemoteStream)
+        assertFalse(options.debugQuality)
+    }
 }

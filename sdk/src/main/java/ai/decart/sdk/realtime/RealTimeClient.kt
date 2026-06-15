@@ -55,6 +55,19 @@ data class ConnectOptions @JvmOverloads constructor(
     val publishMicrophone: Boolean = false,
     val facing: FacingMode = FacingMode.FRONT,
     val mirror: MirrorMode = MirrorMode.AUTO,
+    /**
+     * Opt-in DEBUG-quality measurement: stamps a pixel marker into every outgoing
+     * frame and reads it back off the rendered output to measure true
+     * glass-to-glass latency (`g2gMs` / `ttffMs` / `g2gDropRatio` on
+     * [connectionQuality]). Diagnostic only: the marker is **visible** (bottom-left
+     * of the published + rendered video) and adds per-frame pixel work — don't
+     * enable it for production / end-user sessions. Requires an SDK-created stream
+     * (publishCamera) or a stream built via [createLocalVideoStream] with
+     * `debugQuality = true`.
+     */
+    val debugQuality: Boolean = false,
+    val onConnectionQuality: ((ConnectionQualityReport) -> Unit)? = null,
+    // Kept last so the `ConnectOptions(model) { stream -> ... }` trailing-lambda idiom stays bound here.
     val onRemoteStream: ((RealtimeMediaStream) -> Unit)? = null,
 ) {
     constructor(
@@ -79,6 +92,39 @@ data class ConnectOptions @JvmOverloads constructor(
         mirror = MirrorMode.AUTO,
         onRemoteStream = onRemoteStream,
     )
+
+    /**
+     * Source/binary-compatibility overload for the pre-`debugQuality` positional
+     * shape `(…, facing, mirror, onRemoteStream)`. Parameters are intentionally
+     * non-defaulted so this overload is selected only for full positional calls —
+     * `ConnectOptions(model = …)` and the `ConnectOptions(model) { … }` trailing-lambda
+     * idiom still resolve to the primary constructor.
+     */
+    constructor(
+        model: RealtimeModel,
+        initialPrompt: InitialPrompt?,
+        initialImage: String?,
+        resolution: Resolution?,
+        realtimeConfiguration: RealtimeConfiguration,
+        publishCamera: Boolean,
+        publishMicrophone: Boolean,
+        facing: FacingMode,
+        mirror: MirrorMode,
+        onRemoteStream: ((RealtimeMediaStream) -> Unit)?,
+    ) : this(
+        model = model,
+        initialPrompt = initialPrompt,
+        initialImage = initialImage,
+        resolution = resolution,
+        realtimeConfiguration = realtimeConfiguration,
+        publishCamera = publishCamera,
+        publishMicrophone = publishMicrophone,
+        facing = facing,
+        mirror = mirror,
+        debugQuality = false,
+        onConnectionQuality = null,
+        onRemoteStream = onRemoteStream,
+    )
 }
 
 internal fun buildWebrtcUrl(
@@ -86,13 +132,17 @@ internal fun buildWebrtcUrl(
     model: RealtimeModel,
     apiKey: String,
     resolution: Resolution?,
+    debugQuality: Boolean = false,
 ): String {
     val encodedKey = java.net.URLEncoder.encode(apiKey, "UTF-8")
     val encodedName = java.net.URLEncoder.encode(model.name, "UTF-8")
     val resolutionQs = resolution?.let {
         "&resolution=${java.net.URLEncoder.encode(it.value, "UTF-8")}"
     } ?: ""
-    return "$baseUrl${model.urlPath}?api_key=$encodedKey&model=$encodedName$resolutionQs"
+    // Ask the server to re-stamp the pixel marker from input to output so the
+    // client can read glass-to-glass latency back off the rendered frames.
+    val pixelLatencyQs = if (debugQuality) "&pixel_latency=1" else ""
+    return "$baseUrl${model.urlPath}?api_key=$encodedKey&model=$encodedName$resolutionQs$pixelLatencyQs"
 }
 
 /**
@@ -141,6 +191,20 @@ class RealTimeClient(
     private val _stats = MutableSharedFlow<PublishStatsEvent>(extraBufferCapacity = 50)
     val stats: SharedFlow<PublishStatsEvent> = _stats.asSharedFlow()
 
+    private val _connectionQuality = MutableStateFlow<ConnectionQualityReport?>(null)
+
+    /**
+     * Latest interpreted in-session connection-quality verdict, or null before
+     * any stats arrive. Emitted only while a local camera track is published —
+     * the signal reflects the upstream the device is sending.
+     *
+     * Updates once per stats sample (~every few seconds), not only on change: the
+     * `quality` level is debounced (hysteresis), but the `metrics` refresh each
+     * tick so live values keep flowing. Compare `quality` yourself if you only
+     * care about level transitions. [onConnectionQuality] fires on the same cadence.
+     */
+    val connectionQuality: StateFlow<ConnectionQualityReport?> = _connectionQuality.asStateFlow()
+
     private val _remoteStreamUpdates = MutableSharedFlow<RealtimeMediaStream>(replay = 1, extraBufferCapacity = 10)
     val remoteStreamUpdates: SharedFlow<RealtimeMediaStream> = _remoteStreamUpdates.asSharedFlow()
     val remoteStream: SharedFlow<RealtimeMediaStream> = remoteStreamUpdates
@@ -178,6 +242,7 @@ class RealTimeClient(
         includeMicrophone: Boolean = false,
         configuration: RealtimeConfiguration = RealtimeConfiguration(),
         mirror: MirrorMode = MirrorMode.AUTO,
+        debugQuality: Boolean = false,
     ): RealtimeMediaStream {
         val stream = createLocalVideoStream(
             context = context,
@@ -187,6 +252,7 @@ class RealTimeClient(
             configuration = configuration,
             logger = logger,
             mirror = mirror,
+            debugQuality = debugQuality,
         )
         _localStreamUpdates.tryEmit(stream)
         return stream
@@ -208,12 +274,14 @@ class RealTimeClient(
         includeMicrophone: Boolean = false,
         configuration: RealtimeConfiguration = RealtimeConfiguration(),
         mirror: MirrorMode = MirrorMode.AUTO,
+        debugQuality: Boolean = false,
     ): RealtimeMediaStream = createLocalVideoStream(
         width = model.width,
         height = model.height,
         facing = facing,
         configuration = configuration,
         mirror = mirror,
+        debugQuality = debugQuality,
     )
 
     @JvmOverloads
@@ -228,6 +296,7 @@ class RealTimeClient(
             model = options.model,
             apiKey = config.apiKey,
             resolution = options.resolution,
+            debugQuality = options.debugQuality,
         )
 
         val manager = RealtimeSessionManager(
@@ -242,10 +311,16 @@ class RealTimeClient(
                 publishCamera = options.publishCamera,
                 facing = options.facing,
                 mirror = options.mirror,
+                debugQuality = options.debugQuality,
                 onDiagnostic = { event ->
                     _diagnostics.tryEmit(event)
-                    if (event is DiagnosticEvent.PublishStats) {
-                        _stats.tryEmit(event.data)
+                    when (event) {
+                        is DiagnosticEvent.PublishStats -> _stats.tryEmit(event.data)
+                        is DiagnosticEvent.ConnectionQualitySample -> {
+                            _connectionQuality.value = event.data
+                            options.onConnectionQuality?.invoke(event.data)
+                        }
+                        else -> Unit
                     }
                 },
                 onLocalStream = { stream ->
@@ -255,7 +330,15 @@ class RealTimeClient(
                     _remoteStreamUpdates.tryEmit(stream)
                     options.onRemoteStream?.invoke(stream)
                 },
-                onConnectionStateChange = { state -> _connectionState.value = state },
+                onConnectionStateChange = { state ->
+                    _connectionState.value = state
+                    // Leaving a live session (auto-reconnect or loss) invalidates the
+                    // verdict — clear it so getConnectionQuality() can't return a stale
+                    // one while the channel is torn down, until fresh samples arrive.
+                    if (state == ConnectionState.RECONNECTING || state == ConnectionState.DISCONNECTED) {
+                        _connectionQuality.value = null
+                    }
+                },
                 onSessionStarted = { started -> _sessionStarted.update { started } },
                 onGenerationTick = { tick -> _generationTicks.tryEmit(tick) },
                 onGenerationEnded = { ended -> _generationEnded.tryEmit(ended) },
@@ -267,14 +350,145 @@ class RealTimeClient(
             ),
         )
         sessionManager = manager
-        return manager.connect(localStream)
+        return try {
+            manager.connect(localStream)
+        } catch (e: Throwable) {
+            // Clear the verdict so getConnectionQuality() doesn't return a stale one
+            // from the aborted attempt.
+            _connectionQuality.value = null
+            throw e
+        }
     }
 
     fun disconnect() {
         sessionManager?.cleanup()
         sessionManager = null
         _sessionStarted.value = null
+        _connectionQuality.value = null
         _connectionState.value = ConnectionState.DISCONNECTED
+    }
+
+    /** Latest interpreted in-session connection-quality verdict, or null if none yet. */
+    fun getConnectionQuality(): ConnectionQualityReport? = _connectionQuality.value
+
+    /** Latest glass-to-glass snapshot (only populated under `debugQuality`), or null. */
+    fun getGlassToGlass(): G2GMetrics? = sessionManager?.getGlassToGlass()
+
+    /**
+     * Probe whether the network can sustain a realtime session *before*
+     * connecting, so you can gate showing the integration.
+     *
+     * Default (STUN-only): opens a throwaway WebRTC peer connection against public
+     * STUN (no session, no inference) to check UDP reachability and rough latency.
+     * Opt-in deep probe (`CheckConnectivityOptions(deep = true, model = ...)`):
+     * briefly opens a real session with a synthetic source and measures *true*
+     * glass-to-glass latency (and drops / upstream loss+jitter), then tears it
+     * down — accurate, but costs a short GPU session.
+     */
+    @JvmOverloads
+    suspend fun checkConnectivity(
+        options: CheckConnectivityOptions = CheckConnectivityOptions(),
+    ): ConnectivityReport {
+        if (options.deep) {
+            val model = options.model
+                ?: throw IllegalArgumentException("deep connectivity probe requires a `model` (latency is model-specific)")
+            return runDeepProbe(model, options.durationMs ?: PreflightConfig.ACTIVE_DURATION_MS)
+        }
+
+        val metrics = gatherIceCandidates(
+            context = context,
+            iceServerUrls = options.iceServers,
+            timeoutMs = options.iceGatherTimeoutMs,
+            logger = logger,
+        )
+        return classifyConnectivity(metrics, PreflightConfig.RTT_THRESHOLDS)
+    }
+
+    /**
+     * Open a short real session on a synthetic source with glass-to-glass
+     * measurement, wait for samples (or the window), classify, then tear down.
+     * Runs on a throwaway [RealTimeClient] so it never disturbs this client's session.
+     */
+    private suspend fun runDeepProbe(model: RealtimeModel, durationMs: Long): ConnectivityReport {
+        val probeClient = RealTimeClient(context, config)
+        var synthetic: RealtimeMediaStream? = null
+        return try {
+            // Hard time budget: connect() retries internally with backoff, so without a
+            // cap a flaky network could hold a "preflight" gate for a minute+. The budget
+            // covers one connect cycle plus the sampling window; on expiry we classify
+            // with whatever was measured (or FAILED if no session was ever established).
+            var established = false
+            kotlinx.coroutines.withTimeoutOrNull(durationMs + PreflightConfig.ACTIVE_CONNECT_BUDGET_MS) {
+                val fps = RealtimeConfiguration().media.video.maxFramerate
+                synthetic = LocalStreamFactory.createSyntheticStream(
+                    context = context,
+                    configuration = RealtimeConfiguration(),
+                    width = model.width,
+                    height = model.height,
+                    fps = fps,
+                    logger = logger,
+                )
+                probeClient.connect(
+                    options = ConnectOptions(model = model, debugQuality = true),
+                    localStream = synthetic,
+                )
+                established = true
+                val deadlineMs = monotonicMs() + durationMs
+                while (monotonicMs() < deadlineMs) {
+                    if ((probeClient.getGlassToGlass()?.sampleCount ?: 0) >= PreflightConfig.ACTIVE_MIN_SAMPLES) break
+                    kotlinx.coroutines.delay(200)
+                }
+            }
+            if (!established) {
+                logger.warn("deep connectivity probe could not establish a session within the time budget")
+                classifyActiveProbe(
+                    ConnectivityMetrics(transport = ConnectivityTransport.FAILED, rttMs = null),
+                    ConnectionQualityThresholds.DEFAULT,
+                )
+            } else {
+                classifyActiveProbe(
+                    activeProbeMetrics(
+                        probeClient.getConnectionQuality(),
+                        probeClient.getGlassToGlass(),
+                        probeClient.sessionManager?.isPathRelayed(),
+                    ),
+                    ConnectionQualityThresholds.DEFAULT,
+                )
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e // caller cancelled — propagate, don't report it as a failed probe
+        } catch (e: Exception) {
+            logger.warn("deep connectivity probe failed", mapOf("error" to e.message))
+            classifyActiveProbe(
+                ConnectivityMetrics(transport = ConnectivityTransport.FAILED, rttMs = null),
+                ConnectionQualityThresholds.DEFAULT,
+            )
+        } finally {
+            probeClient.disconnect()
+            probeClient.release()
+            synthetic?.dispose()
+        }
+    }
+
+    private fun activeProbeMetrics(
+        report: ConnectionQualityReport?,
+        g2g: G2GMetrics?,
+        isRelayed: Boolean?,
+    ): ConnectivityMetrics {
+        val m = report?.metrics
+        return ConnectivityMetrics(
+            // Session established; report whether it went over a TURN relay.
+            transport = if (isRelayed == true) ConnectivityTransport.RELAY else ConnectivityTransport.UDP,
+            rttMs = m?.rttMs?.let { Math.round(it) },
+            // Glass-to-glass comes from the fresh tracker snapshot — the probe may exit on
+            // sampleCount before the next (≤3s) stats tick refreshes the quality report.
+            g2gMs = g2g?.medianMs,
+            ttffMs = g2g?.ttffMs,
+            g2gDropRatio = g2g?.dropRatio,
+            upstreamJitterMs = m?.upstreamJitterMs?.let { Math.round(it) },
+            packetLoss = m?.packetLoss,
+            sampleCount = g2g?.sampleCount,
+        )
     }
 
     /**
@@ -399,6 +613,7 @@ class RealTimeClient(
             configuration: RealtimeConfiguration = RealtimeConfiguration(),
             logger: Logger = NoopLogger,
             mirror: MirrorMode = MirrorMode.AUTO,
+            debugQuality: Boolean = false,
         ): RealtimeMediaStream = LocalStreamFactory.createCameraStream(
             context = context,
             configuration = configuration,
@@ -407,6 +622,7 @@ class RealTimeClient(
             facing = facing,
             logger = logger,
             mirror = mirror,
+            debugQuality = debugQuality,
         )
 
         /**
@@ -428,6 +644,7 @@ class RealTimeClient(
             configuration: RealtimeConfiguration = RealtimeConfiguration(),
             logger: Logger = NoopLogger,
             mirror: MirrorMode = MirrorMode.AUTO,
+            debugQuality: Boolean = false,
         ): RealtimeMediaStream = createLocalVideoStream(
             context = context,
             width = model.width,
@@ -436,6 +653,7 @@ class RealTimeClient(
             configuration = configuration,
             logger = logger,
             mirror = mirror,
+            debugQuality = debugQuality,
         )
     }
 }

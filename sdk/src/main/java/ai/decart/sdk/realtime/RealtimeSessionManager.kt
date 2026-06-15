@@ -41,6 +41,7 @@ internal data class RealtimeSessionConfig(
     val publishCamera: Boolean = true,
     val facing: FacingMode = FacingMode.FRONT,
     val mirror: MirrorMode = MirrorMode.AUTO,
+    val debugQuality: Boolean = false,
     val onDiagnostic: DiagnosticEmitter? = null,
     val onLocalStream: (RealtimeMediaStream) -> Unit,
     val onRemoteStream: (RealtimeMediaStream) -> Unit,
@@ -148,6 +149,10 @@ internal class RealtimeSessionManager(
 
     fun getConnectionState(): ConnectionState = managerState
 
+    fun getGlassToGlass(): G2GMetrics? = mediaChannel?.currentGlassToGlass()
+
+    fun isPathRelayed(): Boolean? = mediaChannel?.currentPathRelayed()
+
     private suspend fun <T> runWithRetry(
         attemptCycle: Int,
         block: suspend (attempt: Int) -> T,
@@ -243,6 +248,24 @@ internal class RealtimeSessionManager(
 
         val localStream = ensureLocalStream()
 
+        // Glass-to-glass (opt-in): wire the local stream's tracker to the channel and
+        // start this attempt's TTFF clock. connect-level debugQuality (the server
+        // `pixel_latency` flag) must agree with whether the stream actually stamps,
+        // or measurement silently no-ops — warn on a mismatch.
+        val streamStamps = localStream?.seqTracker != null
+        if (config.debugQuality != streamStamps) {
+            logger.warn(
+                "glass-to-glass debugQuality mismatch; measurement will not work",
+                mapOf(
+                    "connectDebugQuality" to config.debugQuality,
+                    "streamStamps" to streamStamps,
+                    "hint" to "set debugQuality consistently on connect() and createLocalVideoStream()",
+                ),
+            )
+        }
+        media.enableGlassToGlass(localStream?.seqTracker)
+        localStream?.seqTracker?.markStart(monotonicMs())
+
         val initialState = getInitialState()
         val gateAttempt = initialStateGate.startAttempt(initialState)
         remoteStreamGateOpen = !gateAttempt.shouldWait
@@ -325,6 +348,7 @@ internal class RealtimeSessionManager(
             facing = config.facing,
             logger = logger,
             mirror = config.mirror,
+            debugQuality = config.debugQuality,
         )
         sdkOwnedLocalStream = stream
         config.onLocalStream(stream)
