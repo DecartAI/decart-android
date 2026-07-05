@@ -7,12 +7,13 @@ class RealtimeModelsTest {
 
     @Test
     fun `all models have correct count`() {
-        assertEquals(7, RealtimeModels.all.size)
+        assertEquals(8, RealtimeModels.all.size)
     }
 
     @Test
     fun `fromName returns correct model for canonical names`() {
         assertEquals(RealtimeModels.LUCY_2_1, RealtimeModels.fromName("lucy-2.1"))
+        assertEquals(RealtimeModels.LUCY_2_5, RealtimeModels.fromName("lucy-2.5"))
         assertEquals(RealtimeModels.LUCY_VTON_2, RealtimeModels.fromName("lucy-vton-2"))
         assertEquals(RealtimeModels.LUCY_VTON_3, RealtimeModels.fromName("lucy-vton-3"))
         assertEquals(RealtimeModels.LUCY_RESTYLE_2, RealtimeModels.fromName("lucy-restyle-2"))
@@ -60,6 +61,7 @@ class RealtimeModelsTest {
 
         listOf(
             RealtimeModels.LUCY_2_1,
+            RealtimeModels.LUCY_2_5,
             RealtimeModels.LUCY_VTON_2,
             RealtimeModels.LUCY_VTON_3,
             RealtimeModels.LUCY_LATEST,
@@ -71,9 +73,11 @@ class RealtimeModelsTest {
     }
 
     @Test
-    fun `all realtime models capture at 30 fps`() {
+    fun `realtime models capture at expected fps`() {
+        // lucy-2.5 streams at 20 fps; every other realtime model captures at 30 fps.
         RealtimeModels.all.forEach { model ->
-            assertEquals("${model.name} fps should be 30", 30, model.fps)
+            val expected = if (model.name == "lucy-2.5") 20 else 30
+            assertEquals("${model.name} fps", expected, model.fps)
         }
     }
 }
