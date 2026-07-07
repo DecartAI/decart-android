@@ -11,7 +11,7 @@ data class RealtimeModel(
 object RealtimeModels {
     // Canonical models
     val LUCY_2_1 = RealtimeModel("lucy-2.1", "/v1/stream", 30, 1088, 624)
-    val LUCY_2_5 = RealtimeModel("lucy-2.5", "/v1/stream", 20, 1088, 624)
+    val LUCY_2_5 = RealtimeModel("lucy-2.5", "/v1/stream", 30, 1280, 720)
     val LUCY_VTON_2 = RealtimeModel("lucy-vton-2", "/v1/stream", 30, 1088, 624)
     val LUCY_VTON_3 = RealtimeModel("lucy-vton-3", "/v1/stream", 30, 1088, 624)
     val LUCY_RESTYLE_2 = RealtimeModel("lucy-restyle-2", "/v1/stream", 30, 1280, 704)

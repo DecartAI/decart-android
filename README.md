@@ -296,7 +296,7 @@ client.queue.submit(VideoModels.LUCY_RESTYLE_2, restyle)
 | Model | Constant | Resolution | FPS |
 |-------|----------|-----------|-----|
 | Lucy 2.1 | `RealtimeModels.LUCY_2_1` | 1088x624 | 30 |
-| Lucy 2.5 | `RealtimeModels.LUCY_2_5` | 1088x624 | 20 |
+| Lucy 2.5 | `RealtimeModels.LUCY_2_5` | 1280x720 | 30 |
 | Lucy VTON 2 | `RealtimeModels.LUCY_VTON_2` | 1088x624 | 30 |
 | Lucy VTON 3 | `RealtimeModels.LUCY_VTON_3` | 1088x624 | 30 |
 | Lucy Restyle 2 | `RealtimeModels.LUCY_RESTYLE_2` | 1280x704 | 30 |
@@ -307,7 +307,7 @@ client.queue.submit(VideoModels.LUCY_RESTYLE_2, restyle)
 |-------|----------|------------|------------|-----|
 | Lucy Clip | `VideoModels.LUCY_CLIP` | `/v1/jobs/lucy-clip` | 1280x704 | 25 |
 | Lucy 2.1 | `VideoModels.LUCY_2_1` | `/v1/jobs/lucy-2.1` | 1088x624 | 20 |
-| Lucy 2.5 | `VideoModels.LUCY_2_5` | `/v1/jobs/lucy-2.5` | 1088x624 | 20 |
+| Lucy 2.5 | `VideoModels.LUCY_2_5` | `/v1/jobs/lucy-2.5` | 1280x720 | 20 |
 | Lucy VTON 2 | `VideoModels.LUCY_VTON_2` | `/v1/jobs/lucy-vton-2` | 1088x624 | 20 |
 | Lucy VTON 3 | `VideoModels.LUCY_VTON_3` | `/v1/jobs/lucy-vton-3` | 1088x624 | 20 |
 | Lucy Restyle 2 | `VideoModels.LUCY_RESTYLE_2` | `/v1/jobs/lucy-restyle-2` | 1280x704 | 22 |

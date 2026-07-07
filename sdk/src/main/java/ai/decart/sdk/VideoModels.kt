@@ -47,8 +47,8 @@ object VideoModels {
     /** Lucy 2.1 video editing with optional reference image. Output: 1088x624, 20fps. */
     val LUCY_2_1 = VideoModel("lucy-2.1", "/v1/jobs/lucy-2.1", 20, 1088, 624, ModelInputType.VIDEO_EDIT)
 
-    /** Lucy 2.5 video editing with optional reference image. Output: 1088x624, 20fps. */
-    val LUCY_2_5 = VideoModel("lucy-2.5", "/v1/jobs/lucy-2.5", 20, 1088, 624, ModelInputType.VIDEO_EDIT)
+    /** Lucy 2.5 video editing with optional reference image. Output: 1280x720, 20fps. */
+    val LUCY_2_5 = VideoModel("lucy-2.5", "/v1/jobs/lucy-2.5", 20, 1280, 720, ModelInputType.VIDEO_EDIT)
 
     /** Lucy virtual try-on video editing. Output: 1088x624, 20fps. */
     val LUCY_VTON_2 = VideoModel("lucy-vton-2", "/v1/jobs/lucy-vton-2", 20, 1088, 624, ModelInputType.VIDEO_EDIT)
