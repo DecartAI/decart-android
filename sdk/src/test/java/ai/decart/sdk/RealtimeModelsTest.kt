@@ -61,7 +61,6 @@ class RealtimeModelsTest {
 
         listOf(
             RealtimeModels.LUCY_2_1,
-            RealtimeModels.LUCY_2_5,
             RealtimeModels.LUCY_VTON_2,
             RealtimeModels.LUCY_VTON_3,
             RealtimeModels.LUCY_LATEST,
@@ -73,11 +72,15 @@ class RealtimeModelsTest {
     }
 
     @Test
+    fun `lucy 2_5 outputs 720p`() {
+        assertEquals(1280, RealtimeModels.LUCY_2_5.width)
+        assertEquals(720, RealtimeModels.LUCY_2_5.height)
+    }
+
+    @Test
     fun `realtime models capture at expected fps`() {
-        // lucy-2.5 streams at 20 fps; every other realtime model captures at 30 fps.
         RealtimeModels.all.forEach { model ->
-            val expected = if (model.name == "lucy-2.5") 20 else 30
-            assertEquals("${model.name} fps", expected, model.fps)
+            assertEquals("${model.name} fps", 30, model.fps)
         }
     }
 }

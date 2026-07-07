@@ -20,8 +20,8 @@ class VideoModelsTest {
         assertEquals(VideoModels.LUCY_2_5, VideoModels.fromName("lucy-2.5"))
         assertEquals("/v1/jobs/lucy-2.5", VideoModels.LUCY_2_5.jobsUrlPath)
         assertEquals(20, VideoModels.LUCY_2_5.fps)
-        assertEquals(1088, VideoModels.LUCY_2_5.width)
-        assertEquals(624, VideoModels.LUCY_2_5.height)
+        assertEquals(1280, VideoModels.LUCY_2_5.width)
+        assertEquals(720, VideoModels.LUCY_2_5.height)
         assertEquals(ModelInputType.VIDEO_EDIT, VideoModels.LUCY_2_5.inputType)
     }
 
