@@ -22,9 +22,6 @@ object RealtimeModels {
     val LUCY_RESTYLE_LATEST = RealtimeModel("lucy-restyle-latest", "/v1/stream", 30, 1280, 704)
 
     // Deprecated models (old names, still work on the API)
-    @Deprecated("Use LUCY_RESTYLE_2 instead", replaceWith = ReplaceWith("LUCY_RESTYLE_2"))
-    val MIRAGE_V2 = RealtimeModel("mirage_v2", "/v1/stream", 30, 1280, 704)
-
     @Deprecated("Use LUCY_VTON_2 instead", replaceWith = ReplaceWith("LUCY_VTON_2"))
     val LUCY_2_1_VTON_2 = RealtimeModel("lucy-2.1-vton-2", "/v1/stream", 30, 1088, 624)
 
@@ -42,7 +39,6 @@ object RealtimeModels {
         "lucy-vton-latest" -> LUCY_VTON_LATEST
         "lucy-restyle-latest" -> LUCY_RESTYLE_LATEST
         // Deprecated names
-        "mirage_v2" -> MIRAGE_V2
         "lucy-2.1-vton-2" -> LUCY_2_1_VTON_2
         else -> null
     }
