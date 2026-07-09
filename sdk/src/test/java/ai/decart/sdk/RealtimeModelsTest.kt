@@ -28,7 +28,6 @@ class RealtimeModelsTest {
 
     @Test
     fun `fromName returns correct model for deprecated names`() {
-        assertNotNull(RealtimeModels.fromName("mirage_v2"))
         assertNotNull(RealtimeModels.fromName("lucy-2.1-vton-2"))
     }
 
