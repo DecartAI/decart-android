@@ -14,7 +14,6 @@ object RealtimeModels {
     val LUCY_2_5 = RealtimeModel("lucy-2.5", "/v1/stream", 30, 1280, 720)
     val LUCY_VTON_2 = RealtimeModel("lucy-vton-2", "/v1/stream", 30, 1088, 624)
     val LUCY_VTON_3 = RealtimeModel("lucy-vton-3", "/v1/stream", 30, 1088, 624)
-    val LUCY_VTON_3_5 = RealtimeModel("lucy-vton-3.5", "/v1/stream", 30, 1088, 624)
     val LUCY_RESTYLE_2 = RealtimeModel("lucy-restyle-2", "/v1/stream", 30, 1280, 704)
 
     // Latest aliases (server-side resolution)
@@ -34,7 +33,6 @@ object RealtimeModels {
         "lucy-2.5" -> LUCY_2_5
         "lucy-vton-2" -> LUCY_VTON_2
         "lucy-vton-3" -> LUCY_VTON_3
-        "lucy-vton-3.5" -> LUCY_VTON_3_5
         "lucy-restyle-2" -> LUCY_RESTYLE_2
         // Latest aliases
         "lucy-latest" -> LUCY_LATEST
@@ -47,7 +45,7 @@ object RealtimeModels {
 
     /** All available realtime models (canonical only) */
     val all: List<RealtimeModel> = listOf(
-        LUCY_2_1, LUCY_2_5, LUCY_VTON_2, LUCY_VTON_3, LUCY_VTON_3_5, LUCY_RESTYLE_2,
+        LUCY_2_1, LUCY_2_5, LUCY_VTON_2, LUCY_VTON_3, LUCY_RESTYLE_2,
         LUCY_LATEST, LUCY_VTON_LATEST, LUCY_RESTYLE_LATEST,
     )
 }
