@@ -7,7 +7,7 @@ class RealtimeModelsTest {
 
     @Test
     fun `all models have correct count`() {
-        assertEquals(8, RealtimeModels.all.size)
+        assertEquals(9, RealtimeModels.all.size)
     }
 
     @Test
@@ -16,6 +16,7 @@ class RealtimeModelsTest {
         assertEquals(RealtimeModels.LUCY_2_5, RealtimeModels.fromName("lucy-2.5"))
         assertEquals(RealtimeModels.LUCY_VTON_2, RealtimeModels.fromName("lucy-vton-2"))
         assertEquals(RealtimeModels.LUCY_VTON_3, RealtimeModels.fromName("lucy-vton-3"))
+        assertEquals(RealtimeModels.LUCY_VTON_3_5, RealtimeModels.fromName("lucy-vton-3.5"))
         assertEquals(RealtimeModels.LUCY_RESTYLE_2, RealtimeModels.fromName("lucy-restyle-2"))
     }
 
@@ -63,7 +64,6 @@ class RealtimeModelsTest {
             RealtimeModels.LUCY_VTON_2,
             RealtimeModels.LUCY_VTON_3,
             RealtimeModels.LUCY_LATEST,
-            RealtimeModels.LUCY_VTON_LATEST,
         ).forEach { model ->
             assertEquals("${model.name} width", expectedWidth, model.width)
             assertEquals("${model.name} height", expectedHeight, model.height)
@@ -74,6 +74,19 @@ class RealtimeModelsTest {
     fun `lucy 2_5 outputs 720p`() {
         assertEquals(1280, RealtimeModels.LUCY_2_5.width)
         assertEquals(720, RealtimeModels.LUCY_2_5.height)
+    }
+
+    @Test
+    fun `lucy vton 3_5 outputs 720p`() {
+        assertEquals(1280, RealtimeModels.LUCY_VTON_3_5.width)
+        assertEquals(720, RealtimeModels.LUCY_VTON_3_5.height)
+    }
+
+    // lucy-vton-latest resolves server-side to lucy-vton-3.5, so it shares its 720p geometry.
+    @Test
+    fun `lucy vton latest outputs 720p`() {
+        assertEquals(1280, RealtimeModels.LUCY_VTON_LATEST.width)
+        assertEquals(720, RealtimeModels.LUCY_VTON_LATEST.height)
     }
 
     @Test
