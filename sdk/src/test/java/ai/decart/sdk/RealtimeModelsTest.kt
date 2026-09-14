@@ -7,15 +7,13 @@ class RealtimeModelsTest {
 
     @Test
     fun `all models have correct count`() {
-        assertEquals(9, RealtimeModels.all.size)
+        assertEquals(7, RealtimeModels.all.size)
     }
 
     @Test
     fun `fromName returns correct model for canonical names`() {
         assertEquals(RealtimeModels.LUCY_2_1, RealtimeModels.fromName("lucy-2.1"))
         assertEquals(RealtimeModels.LUCY_2_5, RealtimeModels.fromName("lucy-2.5"))
-        assertEquals(RealtimeModels.LUCY_VTON_2, RealtimeModels.fromName("lucy-vton-2"))
-        assertEquals(RealtimeModels.LUCY_VTON_3, RealtimeModels.fromName("lucy-vton-3"))
         assertEquals(RealtimeModels.LUCY_VTON_3_5, RealtimeModels.fromName("lucy-vton-3.5"))
         assertEquals(RealtimeModels.LUCY_RESTYLE_2, RealtimeModels.fromName("lucy-restyle-2"))
     }
@@ -25,11 +23,6 @@ class RealtimeModelsTest {
         assertEquals(RealtimeModels.LUCY_LATEST, RealtimeModels.fromName("lucy-latest"))
         assertEquals(RealtimeModels.LUCY_VTON_LATEST, RealtimeModels.fromName("lucy-vton-latest"))
         assertEquals(RealtimeModels.LUCY_RESTYLE_LATEST, RealtimeModels.fromName("lucy-restyle-latest"))
-    }
-
-    @Test
-    fun `fromName returns correct model for deprecated names`() {
-        assertNotNull(RealtimeModels.fromName("lucy-2.1-vton-2"))
     }
 
     @Test
@@ -61,8 +54,6 @@ class RealtimeModelsTest {
 
         listOf(
             RealtimeModels.LUCY_2_1,
-            RealtimeModels.LUCY_VTON_2,
-            RealtimeModels.LUCY_VTON_3,
             RealtimeModels.LUCY_LATEST,
         ).forEach { model ->
             assertEquals("${model.name} width", expectedWidth, model.width)
