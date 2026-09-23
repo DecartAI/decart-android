@@ -35,6 +35,19 @@ enum class Resolution(val value: String) {
 }
 
 /**
+ * Realtime compute tier. Fast mode ([FAST]) serves the session from a
+ * higher-compute tier for lower latency and higher throughput; output quality
+ * is unchanged. It is currently available for `lucy-2.5` / `lucy-latest` and
+ * `lucy-vton-3.5` / `lucy-vton-latest` (see [RealtimeModel.supportedSpeeds]),
+ * in the US region only, and is billed at 2x the standard realtime rate for
+ * those models. Other models ignore the option. Omit it (the default) for
+ * standard mode.
+ */
+enum class Speed(val value: String) {
+    FAST("fast"),
+}
+
+/**
  * Prefer creating a local stream with [RealTimeClient.createLocalVideoStream]
  * and passing it in, so preview and publish share a single LiveKit Room.
  * If [localStream] is null and [publishCamera] is true the SDK opens one
@@ -67,6 +80,12 @@ data class ConnectOptions @JvmOverloads constructor(
      */
     val debugQuality: Boolean = false,
     val onConnectionQuality: ((ConnectionQualityReport) -> Unit)? = null,
+    /**
+     * Opt-in fast mode ([Speed.FAST]). Only honored for models whose
+     * [RealtimeModel.supportedSpeeds] contains the tier; other models ignore it
+     * server-side (the SDK logs a warning). Null (default) = standard mode.
+     */
+    val speed: Speed? = null,
     // Kept last so the `ConnectOptions(model) { stream -> ... }` trailing-lambda idiom stays bound here.
     val onRemoteStream: ((RealtimeMediaStream) -> Unit)? = null,
 ) {
@@ -123,6 +142,7 @@ data class ConnectOptions @JvmOverloads constructor(
         mirror = mirror,
         debugQuality = false,
         onConnectionQuality = null,
+        speed = null,
         onRemoteStream = onRemoteStream,
     )
 }
@@ -133,6 +153,7 @@ internal fun buildWebrtcUrl(
     apiKey: String,
     resolution: Resolution?,
     debugQuality: Boolean = false,
+    speed: Speed? = null,
 ): String {
     val encodedKey = java.net.URLEncoder.encode(apiKey, "UTF-8")
     val encodedName = java.net.URLEncoder.encode(model.name, "UTF-8")
@@ -142,7 +163,29 @@ internal fun buildWebrtcUrl(
     // Ask the server to re-stamp the pixel marker from input to output so the
     // client can read glass-to-glass latency back off the rendered frames.
     val pixelLatencyQs = if (debugQuality) "&pixel_latency=1" else ""
-    return "$baseUrl${model.urlPath}?api_key=$encodedKey&model=$encodedName$resolutionQs$pixelLatencyQs"
+    // Omitted entirely for standard mode; the server ignores it for models
+    // that do not declare the tier.
+    val speedQs = speed?.let {
+        "&speed=${java.net.URLEncoder.encode(it.value, "UTF-8")}"
+    } ?: ""
+    return "$baseUrl${model.urlPath}?api_key=$encodedKey&model=$encodedName$resolutionQs$pixelLatencyQs$speedQs"
+}
+
+/**
+ * Fast mode is a per-model capability; the server silently serves models that
+ * do not declare it from the standard tier. Warn (never throw) so callers can
+ * see why they are not getting the faster tier, but still send the param.
+ */
+internal fun warnIfSpeedUnsupported(model: RealtimeModel, speed: Speed?, logger: Logger) {
+    if (speed == null || speed in model.supportedSpeeds) return
+    logger.warn(
+        "speed=${speed.value} is not supported by model ${model.name}; the server will ignore it and use the standard tier",
+        mapOf(
+            "model" to model.name,
+            "speed" to speed.value,
+            "supportedSpeeds" to model.supportedSpeeds.map { it.value },
+        ),
+    )
 }
 
 /**
@@ -291,12 +334,15 @@ class RealTimeClient(
     ): RealtimeMediaStream {
         disconnect()
 
+        warnIfSpeedUnsupported(options.model, options.speed, logger)
+
         val url = buildWebrtcUrl(
             baseUrl = config.baseUrl,
             model = options.model,
             apiKey = config.apiKey,
             resolution = options.resolution,
             debugQuality = options.debugQuality,
+            speed = options.speed,
         )
 
         val manager = RealtimeSessionManager(

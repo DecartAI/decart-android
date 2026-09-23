@@ -154,6 +154,12 @@ class MainActivity : ComponentActivity() {
         var checkingConnectivity by remember { mutableStateOf(false) }
         // Opt-in glass-to-glass measurement (visible pixel marker, diagnostic only).
         var measureG2g by remember { mutableStateOf(false) }
+        // Opt-in fast mode (higher-compute tier, 2x rate); only offered for models that support it.
+        var fastMode by remember { mutableStateOf(false) }
+        val fastModeSupported = Speed.FAST in selectedModel.supportedSpeeds
+        LaunchedEffect(selectedModel) {
+            if (!fastModeSupported) fastMode = false
+        }
 
         // Local preview is created lazily, independent of `apiKey` so typing
         // the API key does not churn LiveKit Rooms (each Room owns a native
@@ -439,6 +445,25 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
+            // Fast mode (speed=fast): lower latency / higher throughput, billed at 2x. US region only.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    if (fastModeSupported) "Fast mode (2x rate, US only)"
+                    else "Fast mode (not available for ${selectedModel.name})",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Switch(
+                    checked = fastMode && fastModeSupported,
+                    onCheckedChange = { fastMode = it },
+                    enabled = fastModeSupported && !isConnected && connectionState != ConnectionState.CONNECTING,
+                )
+            }
+
             // Connect/Disconnect
             Button(
                 onClick = {
@@ -509,6 +534,7 @@ class MainActivity : ComponentActivity() {
                                         publishCamera = true,
                                         publishMicrophone = false,
                                         debugQuality = measureG2g,
+                                        speed = if (fastMode && fastModeSupported) Speed.FAST else null,
                                     ),
                                     localStream = preview,
                                 )
