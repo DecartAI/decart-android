@@ -14,7 +14,11 @@ data class RealtimeModel(
      * models that do not declare the tier.
      */
     val supportedSpeeds: Set<Speed> = emptySet(),
-)
+) {
+    /** Binary-compatibility overload for the pre-`supportedSpeeds` 5-argument shape. */
+    constructor(name: String, urlPath: String, fps: Int, width: Int, height: Int) :
+        this(name, urlPath, fps, width, height, emptySet())
+}
 
 object RealtimeModels {
     // Canonical models

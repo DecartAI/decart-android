@@ -145,6 +145,41 @@ data class ConnectOptions @JvmOverloads constructor(
         speed = null,
         onRemoteStream = onRemoteStream,
     )
+
+    /**
+     * Source/binary-compatibility overload for the pre-`speed` primary-constructor
+     * shape `(…, debugQuality, onConnectionQuality, onRemoteStream)`. Parameters are
+     * intentionally non-defaulted so this overload is selected only for full
+     * positional calls; named and trailing-lambda calls resolve to the primary.
+     */
+    constructor(
+        model: RealtimeModel,
+        initialPrompt: InitialPrompt?,
+        initialImage: String?,
+        resolution: Resolution?,
+        realtimeConfiguration: RealtimeConfiguration,
+        publishCamera: Boolean,
+        publishMicrophone: Boolean,
+        facing: FacingMode,
+        mirror: MirrorMode,
+        debugQuality: Boolean,
+        onConnectionQuality: ((ConnectionQualityReport) -> Unit)?,
+        onRemoteStream: ((RealtimeMediaStream) -> Unit)?,
+    ) : this(
+        model = model,
+        initialPrompt = initialPrompt,
+        initialImage = initialImage,
+        resolution = resolution,
+        realtimeConfiguration = realtimeConfiguration,
+        publishCamera = publishCamera,
+        publishMicrophone = publishMicrophone,
+        facing = facing,
+        mirror = mirror,
+        debugQuality = debugQuality,
+        onConnectionQuality = onConnectionQuality,
+        speed = null,
+        onRemoteStream = onRemoteStream,
+    )
 }
 
 internal fun buildWebrtcUrl(
