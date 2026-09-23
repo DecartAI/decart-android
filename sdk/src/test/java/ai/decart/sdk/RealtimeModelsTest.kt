@@ -1,5 +1,6 @@
 package ai.decart.sdk
 
+import ai.decart.sdk.realtime.Speed
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -85,5 +86,33 @@ class RealtimeModelsTest {
         RealtimeModels.all.forEach { model ->
             assertEquals("${model.name} fps", 30, model.fps)
         }
+    }
+
+    // Fast mode is declared server-side only for lucy-2.5 / lucy-vton-3.5 (and
+    // their -latest aliases). Keep this pinned so no other model advertises it.
+    @Test
+    fun `fast speed capability is pinned to lucy 2_5 and lucy vton 3_5 families`() {
+        val fastModels = setOf(
+            RealtimeModels.LUCY_2_5,
+            RealtimeModels.LUCY_LATEST,
+            RealtimeModels.LUCY_VTON_3_5,
+            RealtimeModels.LUCY_VTON_LATEST,
+        )
+        fastModels.forEach { model ->
+            assertEquals("${model.name} supportedSpeeds", setOf(Speed.FAST), model.supportedSpeeds)
+        }
+        (RealtimeModels.all.toSet() - fastModels).forEach { model ->
+            assertTrue("${model.name} must not advertise fast mode", model.supportedSpeeds.isEmpty())
+        }
+        assertEquals(
+            setOf("lucy-2.5", "lucy-latest", "lucy-vton-3.5", "lucy-vton-latest"),
+            RealtimeModels.all.filter { Speed.FAST in it.supportedSpeeds }.map { it.name }.toSet(),
+        )
+    }
+
+    @Test
+    fun `supportedSpeeds defaults to empty for the positional constructor`() {
+        val model = RealtimeModel("custom", "/v1/stream", 30, 1280, 720)
+        assertTrue(model.supportedSpeeds.isEmpty())
     }
 }

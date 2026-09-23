@@ -157,6 +157,24 @@ realtime.connect(
 )
 ```
 
+### Fast mode
+
+Fast mode (`speed = Speed.FAST`) serves the session from a higher-compute tier for lower latency and higher throughput; output quality is unchanged. It is currently available for `lucy-2.5` / `lucy-latest` and `lucy-vton-3.5` / `lucy-vton-latest`, in the US region only, and is billed at 2x the standard realtime rate for those models. Other models ignore the option. Omit it (the default) for standard mode.
+
+```kotlin
+import ai.decart.sdk.realtime.Speed
+
+realtime.connect(
+    ConnectOptions(
+        model = RealtimeModels.LUCY_2_5,
+        speed = Speed.FAST, // default: null (standard mode)
+        onRemoteStream = { /* ... */ },
+    )
+)
+```
+
+Each model advertises the tiers it supports via `RealtimeModel.supportedSpeeds` (e.g. `Speed.FAST in RealtimeModels.LUCY_2_5.supportedSpeeds`). Setting `speed` for a model that does not list it is not an error: the SDK logs a warning through the configured `logger` and the server serves the session from the standard tier at the standard rate.
+
 ### Connection quality
 
 Two layers, both on a shared `GOOD | FAIR | POOR | CRITICAL` scale — the SDK reports, you decide what to do (gate the UI, warn the user, etc.).
@@ -324,9 +342,10 @@ Typed input helpers:
 | `DecartClient` | Unified entry point exposing `realtime` and `queue` clients |
 | `RealTimeClient` | Main entry point for real-time video streaming |
 | `RealTimeClientConfig` | Client configuration (API key, base URL, logger) |
-| `ConnectOptions` | Connection parameters (model, LiveKit stream callbacks, initial prompt) |
+| `ConnectOptions` | Connection parameters (model, LiveKit stream callbacks, initial prompt, `resolution`, `speed`) |
 | `InitialPrompt` | Initial prompt with optional enhancement |
 | `Resolution` | Output resolution enum (`P720`, `P1080`) for `ConnectOptions.resolution` |
+| `Speed` | Realtime compute tier enum (`FAST`) for `ConnectOptions.speed`; advertised per model via `RealtimeModel.supportedSpeeds` |
 | `MirrorMode` | Camera-input mirroring enum (`OFF`, `ON`, `AUTO`) |
 | `ConnectionState` | Connection lifecycle enum (`DISCONNECTED`, `CONNECTING`, `CONNECTED`, `GENERATING`, `RECONNECTING`) |
 | `RealtimeModels` | Available AI model definitions |
