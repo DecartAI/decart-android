@@ -98,12 +98,16 @@ internal class SignalingChannel(
     }
 
     /**
-     * Sends `livekit_join` and awaits `livekit_room_info`. The timeout is a
+     * Sends the lean `livekit_join` (`{ type, passthrough }`), immediately sends
+     * the separate initial-state frame if there is one, then awaits
+     * `livekit_room_info`. The frame's ack is **not** awaited here — observe it
+     * out-of-band via [awaitInitialStateAck]. The room-info timeout is a
      * cancellable [Job] (not [withTimeout]) so a `queue_position` can pause
      * it — users in a queue would otherwise time out before getting a slot.
      */
     suspend fun sendLiveKitJoin(
         timeoutMs: Long,
+        passthrough: Boolean,
         initialState: InitialState? = null,
     ): LiveKitRoomInfoMessage {
         val deferred = CompletableDeferred<LiveKitRoomInfoMessage>()
@@ -115,17 +119,15 @@ internal class SignalingChannel(
         }
         roomInfoTimeoutJob = timeoutJob
 
-        val initialStateMessage = initialState.toInitialStateMessage()
-        if (!send(LiveKitJoinMessage(initialState = initialStateMessage))) {
+        if (!send(LiveKitJoinMessage(passthrough = passthrough))) {
             timeoutJob.cancel()
             roomInfoTimeoutJob = null
             roomInfoDeferred = null
             throw IllegalStateException("WebSocket is not open")
         }
+        initialState.toInitialStateMessage()?.let { send(it) }
         return try {
-            val roomInfo = deferred.await()
-            if (initialStateMessage == null) connected = true
-            roomInfo
+            deferred.await()
         } finally {
             timeoutJob.cancel()
             roomInfoTimeoutJob = null
@@ -176,44 +178,53 @@ internal class SignalingChannel(
         )
     }
 
+    /**
+     * Observes the initial-state frame's ack out-of-band. The frame was already
+     * sent by [sendLiveKitJoin] ([send] here only matches/waits), and the ack may
+     * have arrived before `room_info` — [awaitAckMessage] drains buffered acks
+     * first. The timeout is armed here (after `room_info`), never during a queue
+     * wait. Throws on ack failure, timeout, send failure, or disconnect.
+     */
     suspend fun awaitInitialStateAck(initialState: InitialState?, timeoutMs: Long) {
         val initialStateMessage = initialState.toInitialStateMessage()
         if (initialStateMessage == null) {
             connected = true
             return
         }
-
-        when (initialStateMessage) {
-            is PromptMessage -> {
-                awaitAckMessage(
-                    timeoutMs = timeoutMs,
-                    timeoutMessage = "Prompt send timed out",
-                    ackFailureMessage = "Failed to send prompt",
-                    matches = {
-                        it is PromptAckMessage && it.prompt == initialStateMessage.prompt
-                    },
-                    ackResult = { message ->
-                        val ack = message as PromptAckMessage
-                        AckResult(success = ack.success, error = ack.error)
-                    },
-                    send = { true },
-                )
+        try {
+            when (initialStateMessage) {
+                is PromptMessage -> {
+                    awaitAckMessage(
+                        timeoutMs = timeoutMs,
+                        timeoutMessage = "Prompt send timed out",
+                        ackFailureMessage = "Failed to send prompt",
+                        matches = {
+                            it is PromptAckMessage && it.prompt == initialStateMessage.prompt
+                        },
+                        ackResult = { message ->
+                            val ack = message as PromptAckMessage
+                            AckResult(success = ack.success, error = ack.error)
+                        },
+                        send = { true },
+                    )
+                }
+                is SetImageMessage -> {
+                    awaitAckMessage(
+                        timeoutMs = timeoutMs,
+                        timeoutMessage = "Image send timed out",
+                        ackFailureMessage = "Failed to send image",
+                        matches = { it is SetImageAckMessage },
+                        ackResult = { message ->
+                            val ack = message as SetImageAckMessage
+                            AckResult(success = ack.success, error = ack.error)
+                        },
+                        send = { true },
+                    )
+                }
             }
-            is SetImageMessage -> {
-                awaitAckMessage(
-                    timeoutMs = timeoutMs,
-                    timeoutMessage = "Image send timed out",
-                    ackFailureMessage = "Failed to send image",
-                    matches = { it is SetImageAckMessage },
-                    ackResult = { message ->
-                        val ack = message as SetImageAckMessage
-                        AckResult(success = ack.success, error = ack.error)
-                    },
-                    send = { true },
-                )
-            }
+        } finally {
+            connected = true
         }
-        connected = true
     }
 
     fun close() {

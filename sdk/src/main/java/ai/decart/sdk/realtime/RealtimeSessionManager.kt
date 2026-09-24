@@ -14,10 +14,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
@@ -72,11 +69,9 @@ internal class RealtimeSessionManager(
     private var hasEstablishedSession: Boolean = false
     private var currentAttempt: Int = 0
 
-    // Holds back remote-stream forwarding while the initial-state ack is in
-    // flight — otherwise callers would see frames from the previous prompt.
+    // Tracks attempt identity so a superseded connect bails before marking
+    // the session connected; the initial-state ack is watched out-of-band.
     private val initialStateGate = InitialStateGate()
-    private var pendingRemoteStream: RealtimeMediaStream? = null
-    private var remoteStreamGateOpen: Boolean = true
     private var remoteStreamCollectorJob: Job? = null
 
     val remoteStreamUpdates: SharedFlow<RealtimeMediaStream>?
@@ -267,9 +262,7 @@ internal class RealtimeSessionManager(
         localStream?.seqTracker?.markStart(monotonicMs())
 
         val initialState = getInitialState()
-        val gateAttempt = initialStateGate.startAttempt(initialState)
-        remoteStreamGateOpen = !gateAttempt.shouldWait
-        pendingRemoteStream = null
+        val gateAttempt = initialStateGate.startAttempt()
 
         val wsStart = System.nanoTime()
         signaling.connect(
@@ -283,6 +276,7 @@ internal class RealtimeSessionManager(
 
         val roomInfo = signaling.sendLiveKitJoin(
             config.realtimeConfiguration.connection.connectionTimeoutMs,
+            passthrough = derivePassthrough(initialState),
             initialState = initialState,
         )
 
@@ -291,26 +285,18 @@ internal class RealtimeSessionManager(
             throw StaleAttemptException()
         }
 
-        // Initial-state ack and LiveKit room connect run in parallel,
-        // gated by waitForReadiness before publishing local tracks.
-        val initialStateAckDeferred = scope.async { awaitInitialStateAck(signaling, initialState) }
-        val connectStart = System.nanoTime()
-        coroutineScope {
-            val mediaConnect = async {
-                media.connect(roomInfo, localStream?.room)
-                emitPhase(ConnectionPhase.LIVEKIT_CONNECT, connectStart, success = true)
-            }
-            awaitAll(mediaConnect, initialStateAckDeferred)
-        }
+        // The initial-state frame's ack is off the critical path: watch it
+        // out-of-band (error-only) and proceed straight to room connect / publish.
+        watchInitialStateAck(signaling, initialState)
 
-        val isCurrent = gateAttempt.waitForReadiness(initialStateAckDeferred)
-        if (!isCurrent || disposed) {
+        val connectStart = System.nanoTime()
+        media.connect(roomInfo, localStream?.room)
+        emitPhase(ConnectionPhase.LIVEKIT_CONNECT, connectStart, success = true)
+
+        if (!gateAttempt.isCurrent || disposed) {
             tearDownTransports()
             throw StaleAttemptException()
         }
-        remoteStreamGateOpen = true
-        pendingRemoteStream?.let { config.onRemoteStream(it) }
-        pendingRemoteStream = null
 
         if (localStream != null) {
             val publishStart = System.nanoTime()
@@ -375,6 +361,35 @@ internal class RealtimeSessionManager(
         return null
     }
 
+    /**
+     * `passthrough = true` means no real reference is being applied (no frame, or
+     * a null-bootstrap `set_image`). It is `false` only when the caller supplied a
+     * real image or prompt — exactly one real initial-state frame then follows.
+     */
+    private fun derivePassthrough(initialState: InitialState?): Boolean {
+        if (initialState == null) return true
+        return initialState.image == null && initialState.prompt == null
+    }
+
+    /**
+     * Observes the initial-state ack without blocking connect/publish. A
+     * server rejection (or timeout) surfaces as an error event only.
+     */
+    private fun watchInitialStateAck(signaling: SignalingChannel, initialState: InitialState?) {
+        scope.launch {
+            try {
+                awaitInitialStateAck(signaling, initialState)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (!disposed) {
+                    logger.warn("realtime initial-state rejected", mapOf("error" to e.message))
+                    config.onError(e, "initial-state")
+                }
+            }
+        }
+    }
+
     private suspend fun awaitInitialStateAck(
         signaling: SignalingChannel,
         initialState: InitialState?,
@@ -419,11 +434,7 @@ internal class RealtimeSessionManager(
         remoteStreamCollectorJob?.cancel()
         remoteStreamCollectorJob = scope.launch {
             media.remoteStreamUpdates.collect { stream ->
-                if (remoteStreamGateOpen) {
-                    config.onRemoteStream(stream)
-                } else {
-                    pendingRemoteStream = stream
-                }
+                config.onRemoteStream(stream)
             }
         }
         scope.launch {
@@ -546,8 +557,6 @@ internal class RealtimeSessionManager(
         signalingChannel = null
         remoteStreamCollectorJob?.cancel()
         remoteStreamCollectorJob = null
-        pendingRemoteStream = null
-        remoteStreamGateOpen = true
     }
 
     private fun resetLocalStreamForFreshLiveKitRoom() {
