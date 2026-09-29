@@ -2,16 +2,18 @@ package ai.decart.sample
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,6 +25,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -33,11 +37,15 @@ import ai.decart.sdk.queue.*
 import ai.decart.sdk.realtime.*
 import io.livekit.android.compose.types.TrackReference
 import io.livekit.android.room.track.Track
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 class MainActivity : ComponentActivity() {
+
+    private data class PreparedReferenceImage(val bitmap: Bitmap, val base64: String)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,24 +53,19 @@ class MainActivity : ComponentActivity() {
         val permissionLauncher = registerForActivityResult(
             ActivityResultContracts.RequestMultiplePermissions()
         ) { permissions ->
-            if (permissions.values.all { it }) {
+            if (permissions[Manifest.permission.CAMERA] == true) {
                 showUI()
             } else {
-                Toast.makeText(this, "Camera and mic permissions required", Toast.LENGTH_LONG).show()
                 finish()
             }
         }
 
         val hasCamera = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
-        val hasMic = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
-        if (hasCamera && hasMic) {
+        if (hasCamera) {
             showUI()
         } else {
-            permissionLauncher.launch(arrayOf(
-                Manifest.permission.CAMERA,
-                Manifest.permission.RECORD_AUDIO
-            ))
+            permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA))
         }
     }
 
@@ -73,6 +76,32 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    private suspend fun prepareReferenceImage(uri: Uri): PreparedReferenceImage =
+        withContext(Dispatchers.IO) {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            contentResolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it, null, bounds)
+            } ?: error("Could not open selected image")
+            require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Selected file is not a valid image" }
+
+            var sampleSize = 1
+            while (maxOf(bounds.outWidth / sampleSize, bounds.outHeight / sampleSize) > 1024) {
+                sampleSize *= 2
+            }
+            val bitmap = contentResolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(
+                    it,
+                    null,
+                    BitmapFactory.Options().apply { inSampleSize = sampleSize },
+                )
+            } ?: error("Could not decode selected image")
+
+            PreparedReferenceImage(
+                bitmap = bitmap,
+                base64 = ImageUtils.bitmapToBase64(bitmap, quality = 90),
+            )
+        }
 
     // -------------------------------------------------------------------------
     // Top-level app composable with shared API key and tab navigation
@@ -88,7 +117,7 @@ class MainActivity : ComponentActivity() {
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Decart SDK Sample") },
+                    title = { Text("PANDA REY") },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.primaryContainer
                     )
@@ -145,7 +174,11 @@ class MainActivity : ComponentActivity() {
 
         var prompt by remember { mutableStateOf("") }
         var enhancePrompt by remember { mutableStateOf(true) }
-        var selectedModel by remember { mutableStateOf(RealtimeModels.LUCY_2_1) }
+        var referenceImageUri by remember { mutableStateOf<Uri?>(null) }
+        var referenceBitmap by remember { mutableStateOf<Bitmap?>(null) }
+        var referenceImageBase64 by remember { mutableStateOf<String?>(null) }
+        var encodingReference by remember { mutableStateOf(false) }
+        var selectedModel by remember { mutableStateOf(RealtimeModels.LUCY_2_5) }
         var connectionState by remember { mutableStateOf(ConnectionState.DISCONNECTED) }
         var modelMenuExpanded by remember { mutableStateOf(false) }
         var statusMessage by remember { mutableStateOf("Ready") }
@@ -155,7 +188,7 @@ class MainActivity : ComponentActivity() {
         // Opt-in glass-to-glass measurement (visible pixel marker, diagnostic only).
         var measureG2g by remember { mutableStateOf(false) }
         // Opt-in fast mode (higher-compute tier, 2x rate); only offered for models that support it.
-        var fastMode by remember { mutableStateOf(false) }
+        var fastMode by remember { mutableStateOf(true) }
         val fastModeSupported = Speed.FAST in selectedModel.supportedSpeeds
         LaunchedEffect(selectedModel) {
             if (!fastModeSupported) fastMode = false
@@ -251,6 +284,38 @@ class MainActivity : ComponentActivity() {
 
         val isConnected = connectionState == ConnectionState.CONNECTED ||
                 connectionState == ConnectionState.GENERATING
+
+        val referenceImagePicker = rememberLauncherForActivityResult(
+            ActivityResultContracts.GetContent(),
+        ) { uri ->
+            if (uri != null) {
+                referenceImageUri = uri
+                referenceBitmap = null
+                referenceImageBase64 = null
+                encodingReference = true
+                coroutineScope.launch {
+                    try {
+                        val prepared = prepareReferenceImage(uri)
+                        referenceBitmap = prepared.bitmap
+                        referenceImageBase64 = prepared.base64
+                        statusMessage = "Reference image ready"
+                        if (isConnected) {
+                            client?.setImage(
+                                imageBase64 = prepared.base64,
+                                prompt = prompt.ifBlank { null },
+                                enhance = enhancePrompt,
+                            )
+                            statusMessage = "Reference image sent"
+                        }
+                    } catch (e: Exception) {
+                        Log.e("DecartSample", "Failed to prepare reference image", e)
+                        statusMessage = "Reference image failed: ${e.message}"
+                    } finally {
+                        encodingReference = false
+                    }
+                }
+            }
+        }
 
         Column(
             modifier = Modifier
@@ -420,6 +485,41 @@ class MainActivity : ComponentActivity() {
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedButton(
+                    onClick = { referenceImagePicker.launch("image/*") },
+                    enabled = !encodingReference && connectionState != ConnectionState.CONNECTING,
+                ) {
+                    Text(if (referenceBitmap == null) "Choose reference" else "Change reference")
+                }
+                if (encodingReference) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                }
+                referenceBitmap?.let { bitmap ->
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "Selected character reference",
+                        modifier = Modifier.size(64.dp).clip(RoundedCornerShape(8.dp)),
+                        contentScale = ContentScale.Crop,
+                    )
+                    Text("Reference ready", style = MaterialTheme.typography.bodySmall)
+                    TextButton(
+                        onClick = {
+                            referenceImageUri = null
+                            referenceBitmap = null
+                            referenceImageBase64 = null
+                        },
+                        enabled = !isConnected,
+                    ) {
+                        Text("Remove")
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -502,6 +602,10 @@ class MainActivity : ComponentActivity() {
                             statusMessage = "Please enter an API key"
                             return@Button
                         }
+                        if (encodingReference) {
+                            statusMessage = "Wait for the reference image to finish loading"
+                            return@Button
+                        }
                         val preview = localStream
                         if (preview == null) {
                             statusMessage = "Camera not ready"
@@ -529,10 +633,10 @@ class MainActivity : ComponentActivity() {
                                 rtClient.connect(
                                     options = ConnectOptions(
                                         model = selectedModel,
+                                        initialImage = referenceImageBase64,
                                         initialPrompt = initialPromptObj,
                                         facing = FacingMode.FRONT,
                                         publishCamera = true,
-                                        publishMicrophone = false,
                                         debugQuality = measureG2g,
                                         speed = if (fastMode && fastModeSupported) Speed.FAST else null,
                                     ),
