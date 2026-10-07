@@ -21,6 +21,9 @@ object RealtimeModels {
     val LUCY_2_1 = RealtimeModel("lucy-2.1", "/v1/stream", 30, 1088, 624)
     val LUCY_2_5 = RealtimeModel("lucy-2.5", "/v1/stream", 30, 1280, 720, setOf(Speed.FAST))
     val LUCY_VTON_3_5 = RealtimeModel("lucy-vton-3.5", "/v1/stream", 30, 1280, 720, setOf(Speed.FAST))
+
+    /** No supportedSpeeds: lucy-vton-3.6 is not offered on the fast tier. */
+    val LUCY_VTON_3_6 = RealtimeModel("lucy-vton-3.6", "/v1/stream", 30, 1280, 720)
     val LUCY_RESTYLE_2 = RealtimeModel("lucy-restyle-2", "/v1/stream", 30, 1280, 704)
 
     // Latest aliases (server-side resolution)
@@ -34,6 +37,7 @@ object RealtimeModels {
         "lucy-2.1" -> LUCY_2_1
         "lucy-2.5" -> LUCY_2_5
         "lucy-vton-3.5" -> LUCY_VTON_3_5
+        "lucy-vton-3.6" -> LUCY_VTON_3_6
         "lucy-restyle-2" -> LUCY_RESTYLE_2
         // Latest aliases
         "lucy-latest" -> LUCY_LATEST
@@ -44,7 +48,7 @@ object RealtimeModels {
 
     /** All available realtime models (canonical only) */
     val all: List<RealtimeModel> = listOf(
-        LUCY_2_1, LUCY_2_5, LUCY_VTON_3_5, LUCY_RESTYLE_2,
+        LUCY_2_1, LUCY_2_5, LUCY_VTON_3_5, LUCY_VTON_3_6, LUCY_RESTYLE_2,
         LUCY_LATEST, LUCY_VTON_LATEST, LUCY_RESTYLE_LATEST,
     )
 }
