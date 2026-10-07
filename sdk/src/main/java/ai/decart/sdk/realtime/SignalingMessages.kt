@@ -92,7 +92,7 @@ data class QueuePositionMessage(
 // Client-only messages
 
 data class LiveKitJoinMessage(
-    @SerialName("initial_state") val initialState: InitialStateMessage?,
+    val passthrough: Boolean,
 ) : ClientMessage
 
 @Serializable
@@ -159,10 +159,7 @@ object SignalingMessageParser {
             }
             is LiveKitJoinMessage -> buildJsonObject {
                 put("type", "livekit_join")
-                put(
-                    "initial_state",
-                    message.initialState?.let { toJsonObject(it) } ?: JsonNull,
-                )
+                put("passthrough", message.passthrough)
             }
             is PromptMessage -> buildJsonObject {
                 put("type", "prompt")
