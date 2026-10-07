@@ -1,8 +1,7 @@
 package ai.decart.sdk.realtime
 
 /**
- * Android port of the server's E2E pixel-latency marker protocol
- * (`inference_server/rt/bench/pixel_marker.py`). Used to measure true
+ * Android port of the server's E2E pixel-latency marker protocol. Used to measure true
  * glass-to-glass latency: the client stamps a monotonic sequence number into the
  * bottom-left of every outgoing frame, the server (with `pixel_latency` enabled)
  * reads it on input and re-stamps it onto the matching output frame, and the
