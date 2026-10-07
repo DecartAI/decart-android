@@ -22,7 +22,6 @@ object RealtimeModels {
     val LUCY_2_5 = RealtimeModel("lucy-2.5", "/v1/stream", 30, 1280, 720, setOf(Speed.FAST))
     val LUCY_VTON_3_5 = RealtimeModel("lucy-vton-3.5", "/v1/stream", 30, 1280, 720, setOf(Speed.FAST))
 
-    /** No supportedSpeeds: lucy-vton-3.6 is not offered on the fast tier. */
     val LUCY_VTON_3_6 = RealtimeModel("lucy-vton-3.6", "/v1/stream", 30, 1280, 720)
     val LUCY_RESTYLE_2 = RealtimeModel("lucy-restyle-2", "/v1/stream", 30, 1280, 704)
 
