@@ -59,7 +59,7 @@ object VideoModels {
     /** Video restyling with prompt or reference image. Output: 1280x704, 22fps. */
     val LUCY_RESTYLE_2 = VideoModel("lucy-restyle-2", "/v1/jobs/lucy-restyle-2", 22, 1280, 704, ModelInputType.VIDEO_RESTYLE)
 
-    // Latest aliases (server-side resolution)
+    // Latest aliases (server-side resolution; lucy-vton-latest -> lucy-vton-3.6)
     val LUCY_LATEST = VideoModel("lucy-latest", "/v1/jobs/lucy-latest", 20, 1088, 624, ModelInputType.VIDEO_EDIT)
     val LUCY_VTON_LATEST = VideoModel("lucy-vton-latest", "/v1/jobs/lucy-vton-latest", 20, 1280, 720, ModelInputType.VIDEO_EDIT)
     val LUCY_RESTYLE_LATEST = VideoModel("lucy-restyle-latest", "/v1/jobs/lucy-restyle-latest", 22, 1280, 704, ModelInputType.VIDEO_RESTYLE)
