@@ -81,7 +81,7 @@ class RealtimeModelsTest {
         assertEquals(720, RealtimeModels.LUCY_VTON_3_6.height)
     }
 
-    // lucy-vton-latest resolves server-side to lucy-vton-3.5, so it shares its 720p geometry.
+    // lucy-vton-latest resolves server-side to lucy-vton-3.6, so it shares its 720p geometry.
     @Test
     fun `lucy vton latest outputs 720p`() {
         assertEquals(1280, RealtimeModels.LUCY_VTON_LATEST.width)
@@ -95,14 +95,16 @@ class RealtimeModelsTest {
         }
     }
 
-    // Fast mode is declared server-side only for lucy-2.5 / lucy-vton-3.5 (and
-    // their -latest aliases). Keep this pinned so no other model advertises it.
+    // Fast mode is declared server-side only for lucy-2.5 / lucy-vton-3.5 /
+    // lucy-vton-3.6 (and their -latest aliases). Keep this pinned so no other
+    // model advertises it.
     @Test
-    fun `fast speed capability is pinned to lucy 2_5 and lucy vton 3_5 families`() {
+    fun `fast speed capability is pinned to lucy 2_5 and lucy vton 3_5 and 3_6 families`() {
         val fastModels = setOf(
             RealtimeModels.LUCY_2_5,
             RealtimeModels.LUCY_LATEST,
             RealtimeModels.LUCY_VTON_3_5,
+            RealtimeModels.LUCY_VTON_3_6,
             RealtimeModels.LUCY_VTON_LATEST,
         )
         fastModels.forEach { model ->
@@ -112,7 +114,7 @@ class RealtimeModelsTest {
             assertTrue("${model.name} must not advertise fast mode", model.supportedSpeeds.isEmpty())
         }
         assertEquals(
-            setOf("lucy-2.5", "lucy-latest", "lucy-vton-3.5", "lucy-vton-latest"),
+            setOf("lucy-2.5", "lucy-latest", "lucy-vton-3.5", "lucy-vton-3.6", "lucy-vton-latest"),
             RealtimeModels.all.filter { Speed.FAST in it.supportedSpeeds }.map { it.name }.toSet(),
         )
     }
