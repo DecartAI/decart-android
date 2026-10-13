@@ -6,7 +6,7 @@ import org.junit.Test
 class VideoModelsTest {
     @Test
     fun `video models match JS SDK registry`() {
-        assertEquals(10, VideoModels.all.size)
+        assertEquals(8, VideoModels.all.size)
         assertEquals(VideoModels.LUCY_2_1, VideoModels.fromName("lucy-2.1"))
         assertEquals(20, VideoModels.LUCY_2_1.fps)
         assertEquals(1088, VideoModels.LUCY_2_1.width)

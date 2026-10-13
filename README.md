@@ -323,7 +323,6 @@ client.queue.submit(VideoModels.LUCY_RESTYLE_2, restyle)
 
 | Model | Constant | Queue Path | Resolution | FPS |
 |-------|----------|------------|------------|-----|
-| Lucy Clip | `VideoModels.LUCY_CLIP` | `/v1/jobs/lucy-clip` | 1280x704 | 25 |
 | Lucy 2.1 | `VideoModels.LUCY_2_1` | `/v1/jobs/lucy-2.1` | 1088x624 | 20 |
 | Lucy 2.5 | `VideoModels.LUCY_2_5` | `/v1/jobs/lucy-2.5` | 1280x720 | 20 |
 | Lucy VTON 3.5 | `VideoModels.LUCY_VTON_3_5` | `/v1/jobs/lucy-vton-3.5` | 1280x720 | 20 |
@@ -332,7 +331,7 @@ client.queue.submit(VideoModels.LUCY_RESTYLE_2, restyle)
 
 Typed input helpers:
 
-- `VideoEditInput` (`lucy-2.1`, `lucy-2.5`, `lucy-vton-3.5`, `lucy-vton-3.6`, `lucy-clip`)
+- `VideoEditInput` (`lucy-2.1`, `lucy-2.5`, `lucy-vton-3.5`, `lucy-vton-3.6`)
 - `VideoRestyleInput` (`lucy-restyle-2`)
 
 ## API Reference

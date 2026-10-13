@@ -41,9 +41,6 @@ data class VideoModel(
  */
 object VideoModels {
     // Canonical models
-    /** Video-to-video clip editing. Output: 1280x704, 25fps. */
-    val LUCY_CLIP = VideoModel("lucy-clip", "/v1/jobs/lucy-clip", 25, 1280, 704, ModelInputType.VIDEO_EDIT)
-
     /** Lucy 2.1 video editing with optional reference image. Output: 1088x624, 20fps. */
     val LUCY_2_1 = VideoModel("lucy-2.1", "/v1/jobs/lucy-2.1", 20, 1088, 624, ModelInputType.VIDEO_EDIT)
 
@@ -63,12 +60,8 @@ object VideoModels {
     val LUCY_LATEST = VideoModel("lucy-latest", "/v1/jobs/lucy-latest", 20, 1088, 624, ModelInputType.VIDEO_EDIT)
     val LUCY_VTON_LATEST = VideoModel("lucy-vton-latest", "/v1/jobs/lucy-vton-latest", 20, 1280, 720, ModelInputType.VIDEO_EDIT)
     val LUCY_RESTYLE_LATEST = VideoModel("lucy-restyle-latest", "/v1/jobs/lucy-restyle-latest", 22, 1280, 704, ModelInputType.VIDEO_RESTYLE)
-    val LUCY_CLIP_LATEST = VideoModel("lucy-clip-latest", "/v1/jobs/lucy-clip-latest", 25, 1280, 704, ModelInputType.VIDEO_EDIT)
 
     // Deprecated models (old names, still work on the API)
-    @Deprecated("Use LUCY_CLIP instead", replaceWith = ReplaceWith("LUCY_CLIP"))
-    val LUCY_PRO_V2V = VideoModel("lucy-pro-v2v", "/v1/jobs/lucy-pro-v2v", 25, 1280, 704, ModelInputType.VIDEO_EDIT)
-
     @Deprecated("Use LUCY_RESTYLE_2 instead", replaceWith = ReplaceWith("LUCY_RESTYLE_2"))
     val LUCY_RESTYLE_V2V = VideoModel("lucy-restyle-v2v", "/v1/jobs/lucy-restyle-v2v", 22, 1280, 704, ModelInputType.VIDEO_RESTYLE)
 
@@ -77,7 +70,6 @@ object VideoModels {
 
     /** All available video models (canonical + latest) */
     val all: List<VideoModel> = listOf(
-        LUCY_CLIP,
         LUCY_2_1,
         LUCY_2_5,
         LUCY_VTON_3_5,
@@ -86,14 +78,13 @@ object VideoModels {
         LUCY_LATEST,
         LUCY_VTON_LATEST,
         LUCY_RESTYLE_LATEST,
-        LUCY_CLIP_LATEST,
     )
 
     /** All models including deprecated names */
     @Suppress("DEPRECATION")
     val allIncludingDeprecated: List<VideoModel> = listOf(
-        LUCY_CLIP, LUCY_2_1, LUCY_2_5, LUCY_VTON_3_5, LUCY_VTON_3_6, LUCY_RESTYLE_2,
-        LUCY_LATEST, LUCY_VTON_LATEST, LUCY_RESTYLE_LATEST, LUCY_CLIP_LATEST,
-        LUCY_PRO_V2V, LUCY_RESTYLE_V2V,
+        LUCY_2_1, LUCY_2_5, LUCY_VTON_3_5, LUCY_VTON_3_6, LUCY_RESTYLE_2,
+        LUCY_LATEST, LUCY_VTON_LATEST, LUCY_RESTYLE_LATEST,
+        LUCY_RESTYLE_V2V,
     )
 }
