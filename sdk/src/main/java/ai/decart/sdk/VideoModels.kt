@@ -41,8 +41,8 @@ data class VideoModel(
  */
 object VideoModels {
     // Canonical models
-    /** Lucy 2.1 video editing with optional reference image. Output: 1088x624, 20fps. */
-    val LUCY_2_1 = VideoModel("lucy-2.1", "/v1/jobs/lucy-2.1", 20, 1088, 624, ModelInputType.VIDEO_EDIT)
+    /** Lucy 2.1 video editing with optional reference image. Output: 1280x720, 20fps. */
+    val LUCY_2_1 = VideoModel("lucy-2.1", "/v1/jobs/lucy-2.1", 20, 1280, 720, ModelInputType.VIDEO_EDIT)
 
     /** Lucy 2.5 video editing with optional reference image. Output: 1280x720, 20fps. */
     val LUCY_2_5 = VideoModel("lucy-2.5", "/v1/jobs/lucy-2.5", 20, 1280, 720, ModelInputType.VIDEO_EDIT)
@@ -57,7 +57,7 @@ object VideoModels {
     val LUCY_RESTYLE_2 = VideoModel("lucy-restyle-2", "/v1/jobs/lucy-restyle-2", 22, 1280, 704, ModelInputType.VIDEO_RESTYLE)
 
     // Latest aliases (server-side resolution; lucy-vton-latest -> lucy-vton-3.6)
-    val LUCY_LATEST = VideoModel("lucy-latest", "/v1/jobs/lucy-latest", 20, 1088, 624, ModelInputType.VIDEO_EDIT)
+    val LUCY_LATEST = VideoModel("lucy-latest", "/v1/jobs/lucy-latest", 20, 1280, 720, ModelInputType.VIDEO_EDIT)
     val LUCY_VTON_LATEST = VideoModel("lucy-vton-latest", "/v1/jobs/lucy-vton-latest", 20, 1280, 720, ModelInputType.VIDEO_EDIT)
     val LUCY_RESTYLE_LATEST = VideoModel("lucy-restyle-latest", "/v1/jobs/lucy-restyle-latest", 22, 1280, 704, ModelInputType.VIDEO_RESTYLE)
 
