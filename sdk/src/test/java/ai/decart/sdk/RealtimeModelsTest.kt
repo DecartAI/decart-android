@@ -50,23 +50,24 @@ class RealtimeModelsTest {
 
 
     @Test
-    fun `lucy realtime model dimensions match encoder contract`() {
-        val expectedWidth = 1088
-        val expectedHeight = 624
-
-        listOf(
-            RealtimeModels.LUCY_2_1,
-            RealtimeModels.LUCY_LATEST,
-        ).forEach { model ->
-            assertEquals("${model.name} width", expectedWidth, model.width)
-            assertEquals("${model.name} height", expectedHeight, model.height)
-        }
+    fun `lucy 2_1 outputs 720p`() {
+        assertEquals(1280, RealtimeModels.LUCY_2_1.width)
+        assertEquals(720, RealtimeModels.LUCY_2_1.height)
     }
 
     @Test
     fun `lucy 2_5 outputs 720p`() {
         assertEquals(1280, RealtimeModels.LUCY_2_5.width)
         assertEquals(720, RealtimeModels.LUCY_2_5.height)
+    }
+
+    // lucy-latest resolves server-side to lucy-2.5, so it shares its 720p geometry.
+    @Test
+    fun `lucy latest matches lucy 2_5 geometry`() {
+        assertEquals(1280, RealtimeModels.LUCY_LATEST.width)
+        assertEquals(720, RealtimeModels.LUCY_LATEST.height)
+        assertEquals(RealtimeModels.LUCY_2_5.width, RealtimeModels.LUCY_LATEST.width)
+        assertEquals(RealtimeModels.LUCY_2_5.height, RealtimeModels.LUCY_LATEST.height)
     }
 
     @Test

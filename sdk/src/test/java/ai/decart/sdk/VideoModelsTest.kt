@@ -6,11 +6,11 @@ import org.junit.Test
 class VideoModelsTest {
     @Test
     fun `video models match JS SDK registry`() {
-        assertEquals(10, VideoModels.all.size)
+        assertEquals(8, VideoModels.all.size)
         assertEquals(VideoModels.LUCY_2_1, VideoModels.fromName("lucy-2.1"))
         assertEquals(20, VideoModels.LUCY_2_1.fps)
-        assertEquals(1088, VideoModels.LUCY_2_1.width)
-        assertEquals(624, VideoModels.LUCY_2_1.height)
+        assertEquals(1280, VideoModels.LUCY_2_1.width)
+        assertEquals(720, VideoModels.LUCY_2_1.height)
         assertEquals(ModelInputType.VIDEO_EDIT, VideoModels.LUCY_2_1.inputType)
     }
 
@@ -22,6 +22,19 @@ class VideoModelsTest {
         assertEquals(1280, VideoModels.LUCY_2_5.width)
         assertEquals(720, VideoModels.LUCY_2_5.height)
         assertEquals(ModelInputType.VIDEO_EDIT, VideoModels.LUCY_2_5.inputType)
+    }
+
+    // lucy-latest resolves server-side to lucy-2.5, so it shares its 720p geometry.
+    @Test
+    fun `lucy-latest matches JS SDK registry`() {
+        assertEquals(VideoModels.LUCY_LATEST, VideoModels.fromName("lucy-latest"))
+        assertEquals("/v1/jobs/lucy-latest", VideoModels.LUCY_LATEST.jobsUrlPath)
+        assertEquals(20, VideoModels.LUCY_LATEST.fps)
+        assertEquals(1280, VideoModels.LUCY_LATEST.width)
+        assertEquals(720, VideoModels.LUCY_LATEST.height)
+        assertEquals(ModelInputType.VIDEO_EDIT, VideoModels.LUCY_LATEST.inputType)
+        assertEquals(VideoModels.LUCY_2_5.width, VideoModels.LUCY_LATEST.width)
+        assertEquals(VideoModels.LUCY_2_5.height, VideoModels.LUCY_LATEST.height)
     }
 
     @Test
