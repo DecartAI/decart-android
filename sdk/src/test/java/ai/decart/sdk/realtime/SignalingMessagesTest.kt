@@ -233,28 +233,15 @@ class SignalingMessagesTest {
     }
 
     @Test
-    fun `serialize livekit join message`() {
-        val json = SignalingMessageParser.serialize(LiveKitJoinMessage(initialState = null))
-        assertEquals("""{"type":"livekit_join","initial_state":null}""", json)
+    fun `serialize lean livekit join with passthrough true`() {
+        val json = SignalingMessageParser.serialize(LiveKitJoinMessage(passthrough = true))
+        assertEquals("""{"type":"livekit_join","passthrough":true}""", json)
     }
 
     @Test
-    fun `serialize livekit join message with initial state`() {
-        val json = SignalingMessageParser.serialize(
-            LiveKitJoinMessage(
-                initialState = SetImageMessage(
-                    imageData = "base64data",
-                    prompt = "test prompt",
-                    enhancePrompt = false,
-                ),
-            ),
-        )
-
-        assertTrue(json.contains(""""type":"livekit_join""""))
-        assertTrue(json.contains(""""initial_state":{"type":"set_image""""))
-        assertTrue(json.contains(""""image_data":"base64data""""))
-        assertTrue(json.contains(""""prompt":"test prompt""""))
-        assertTrue(json.contains(""""enhance_prompt":false"""))
+    fun `serialize lean livekit join with passthrough false`() {
+        val json = SignalingMessageParser.serialize(LiveKitJoinMessage(passthrough = false))
+        assertEquals("""{"type":"livekit_join","passthrough":false}""", json)
     }
 
     // ── Round-trip tests ────────────────────────────────────────────────

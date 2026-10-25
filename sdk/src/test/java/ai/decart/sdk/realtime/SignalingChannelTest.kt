@@ -19,7 +19,6 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -27,7 +26,7 @@ import java.util.concurrent.TimeUnit
 class SignalingChannelTest {
 
     @Test
-    fun `livekit join bundles initial state`() = runBlocking {
+    fun `livekit join is lean and the initial-state frame follows separately`() = runBlocking {
         withSignalingServer { server ->
             val channel = newChannel()
             channel.connect(server.wsUrl(), timeoutMs = 1_000)
@@ -35,6 +34,7 @@ class SignalingChannelTest {
             val roomInfo = async {
                 channel.sendLiveKitJoin(
                     timeoutMs = 1_000,
+                    passthrough = false,
                     initialState = InitialState(
                         image = "base64data",
                         prompt = "test prompt",
@@ -45,13 +45,15 @@ class SignalingChannelTest {
             yield()
 
             val join = Json.parseToJsonElement(server.messages.receiveWithTimeout()).jsonObject
-            val initialState = join.getValue("initial_state").jsonObject
-
             assertEquals("livekit_join", join.getValue("type").jsonPrimitive.content)
-            assertEquals("set_image", initialState.getValue("type").jsonPrimitive.content)
-            assertEquals("base64data", initialState.getValue("image_data").jsonPrimitive.content)
-            assertEquals("test prompt", initialState.getValue("prompt").jsonPrimitive.content)
-            assertEquals("false", initialState.getValue("enhance_prompt").jsonPrimitive.content)
+            assertEquals("false", join.getValue("passthrough").jsonPrimitive.content)
+            assertFalse("join must be lean — no nested initial_state", join.containsKey("initial_state"))
+
+            val frame = Json.parseToJsonElement(server.messages.receiveWithTimeout()).jsonObject
+            assertEquals("set_image", frame.getValue("type").jsonPrimitive.content)
+            assertEquals("base64data", frame.getValue("image_data").jsonPrimitive.content)
+            assertEquals("test prompt", frame.getValue("prompt").jsonPrimitive.content)
+            assertEquals("false", frame.getValue("enhance_prompt").jsonPrimitive.content)
 
             server.socket.await().send(ROOM_INFO)
             roomInfo.await()
@@ -60,39 +62,44 @@ class SignalingChannelTest {
     }
 
     @Test
-    fun `early bundled prompt ack is buffered until room info arrives`() = runBlocking {
+    fun `early initial-state ack is buffered until room info then drained out-of-band`() = runBlocking {
         withSignalingServer { server ->
             val channel = newChannel()
             channel.connect(server.wsUrl(), timeoutMs = 1_000)
 
             val initialState = InitialState(prompt = "hello", enhance = true)
             val roomInfo = async {
-                channel.sendLiveKitJoin(timeoutMs = 1_000, initialState = initialState)
+                channel.sendLiveKitJoin(timeoutMs = 1_000, passthrough = false, initialState = initialState)
             }
             yield()
 
-            server.messages.receiveWithTimeout()
+            server.messages.receiveWithTimeout() // lean join
+            server.messages.receiveWithTimeout() // separate prompt frame
+
+            // Ack races ahead of room_info: it must be buffered and must not complete the join.
             server.socket.await().send("""{"type":"prompt_ack","prompt":"hello","success":true,"error":null}""")
             assertFalse("room info must still gate the join", roomInfo.isCompleted)
 
             server.socket.await().send(ROOM_INFO)
             roomInfo.await()
 
+            // Out-of-band watcher drains the buffered ack without re-sending the frame.
             channel.awaitInitialStateAck(initialState, timeoutMs = 1_000)
             channel.close()
         }
     }
 
     @Test
-    fun `legacy set image path still sends after room info`() = runBlocking {
+    fun `passthrough join carries no frame and steady-state set image still sends`() = runBlocking {
         withSignalingServer { server ->
             val channel = newChannel()
             channel.connect(server.wsUrl(), timeoutMs = 1_000)
 
-            val roomInfo = async { channel.sendLiveKitJoin(timeoutMs = 1_000) }
+            val roomInfo = async { channel.sendLiveKitJoin(timeoutMs = 1_000, passthrough = true) }
             yield()
-            val join = server.messages.receiveWithTimeout()
-            assertTrue(join.contains(""""initial_state":null"""))
+            val join = Json.parseToJsonElement(server.messages.receiveWithTimeout()).jsonObject
+            assertEquals("true", join.getValue("passthrough").jsonPrimitive.content)
+            assertFalse(join.containsKey("initial_state"))
 
             server.socket.await().send(ROOM_INFO)
             roomInfo.await()
