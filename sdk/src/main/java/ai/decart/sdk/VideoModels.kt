@@ -47,6 +47,9 @@ object VideoModels {
     /** Lucy 2.5 video editing with optional reference image. Output: 1280x720, 20fps. */
     val LUCY_2_5 = VideoModel("lucy-2.5", "/v1/jobs/lucy-2.5", 20, 1280, 720, ModelInputType.VIDEO_EDIT)
 
+    /** Lucy 2.6 video editing with optional reference image. Output: 1280x720, 20fps. */
+    val LUCY_2_6 = VideoModel("lucy-2.6", "/v1/jobs/lucy-2.6", 20, 1280, 720, ModelInputType.VIDEO_EDIT)
+
     /** Lucy virtual try-on 3.5 video editing. Output: 1280x720, 20fps. */
     val LUCY_VTON_3_5 = VideoModel("lucy-vton-3.5", "/v1/jobs/lucy-vton-3.5", 20, 1280, 720, ModelInputType.VIDEO_EDIT)
 
@@ -72,6 +75,7 @@ object VideoModels {
     val all: List<VideoModel> = listOf(
         LUCY_2_1,
         LUCY_2_5,
+        LUCY_2_6,
         LUCY_VTON_3_5,
         LUCY_VTON_3_6,
         LUCY_RESTYLE_2,
@@ -83,7 +87,7 @@ object VideoModels {
     /** All models including deprecated names */
     @Suppress("DEPRECATION")
     val allIncludingDeprecated: List<VideoModel> = listOf(
-        LUCY_2_1, LUCY_2_5, LUCY_VTON_3_5, LUCY_VTON_3_6, LUCY_RESTYLE_2,
+        LUCY_2_1, LUCY_2_5, LUCY_2_6, LUCY_VTON_3_5, LUCY_VTON_3_6, LUCY_RESTYLE_2,
         LUCY_LATEST, LUCY_VTON_LATEST, LUCY_RESTYLE_LATEST,
         LUCY_RESTYLE_V2V,
     )

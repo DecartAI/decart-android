@@ -38,7 +38,7 @@ enum class Resolution(val value: String) {
  * Realtime compute tier. Fast mode ([FAST]) serves the session from a
  * higher-compute tier for lower latency and higher throughput; output quality
  * is unchanged. It is currently available for `lucy-2.5` / `lucy-latest`,
- * `lucy-vton-3.5`, and `lucy-vton-3.6` / `lucy-vton-latest` (see
+ * `lucy-2.6`, `lucy-vton-3.5`, and `lucy-vton-3.6` / `lucy-vton-latest` (see
  * [RealtimeModel.supportedSpeeds]), in the US region only, and is billed at 2x
  * the standard realtime rate for those models. Other models ignore the option.
  * Omit it (the default) for standard mode.
