@@ -96,6 +96,7 @@ class RealTimeClientUrlTest {
         val logger = RecordingLogger()
         warnIfSpeedUnsupported(RealtimeModels.LUCY_2_1, null, logger)
         warnIfSpeedUnsupported(RealtimeModels.LUCY_2_5, Speed.FAST, logger)
+        warnIfSpeedUnsupported(RealtimeModels.LUCY_2_6, Speed.FAST, logger)
         warnIfSpeedUnsupported(RealtimeModels.LUCY_LATEST, Speed.FAST, logger)
         warnIfSpeedUnsupported(RealtimeModels.LUCY_VTON_3_5, Speed.FAST, logger)
         warnIfSpeedUnsupported(RealtimeModels.LUCY_VTON_3_6, Speed.FAST, logger)

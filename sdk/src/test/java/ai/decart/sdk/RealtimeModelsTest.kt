@@ -8,13 +8,14 @@ class RealtimeModelsTest {
 
     @Test
     fun `all models have correct count`() {
-        assertEquals(8, RealtimeModels.all.size)
+        assertEquals(9, RealtimeModels.all.size)
     }
 
     @Test
     fun `fromName returns correct model for canonical names`() {
         assertEquals(RealtimeModels.LUCY_2_1, RealtimeModels.fromName("lucy-2.1"))
         assertEquals(RealtimeModels.LUCY_2_5, RealtimeModels.fromName("lucy-2.5"))
+        assertEquals(RealtimeModels.LUCY_2_6, RealtimeModels.fromName("lucy-2.6"))
         assertEquals(RealtimeModels.LUCY_VTON_3_5, RealtimeModels.fromName("lucy-vton-3.5"))
         assertEquals(RealtimeModels.LUCY_VTON_3_6, RealtimeModels.fromName("lucy-vton-3.6"))
         assertEquals(RealtimeModels.LUCY_RESTYLE_2, RealtimeModels.fromName("lucy-restyle-2"))
@@ -61,6 +62,17 @@ class RealtimeModelsTest {
         assertEquals(720, RealtimeModels.LUCY_2_5.height)
     }
 
+    @Test
+    fun `lucy-2_6 matches JS SDK registry`() {
+        assertEquals(RealtimeModels.LUCY_2_6, RealtimeModels.fromName("lucy-2.6"))
+        assertEquals("lucy-2.6", RealtimeModels.LUCY_2_6.name)
+        assertEquals("/v1/stream", RealtimeModels.LUCY_2_6.urlPath)
+        assertEquals(30, RealtimeModels.LUCY_2_6.fps)
+        assertEquals(1280, RealtimeModels.LUCY_2_6.width)
+        assertEquals(720, RealtimeModels.LUCY_2_6.height)
+        assertEquals(setOf(Speed.FAST), RealtimeModels.LUCY_2_6.supportedSpeeds)
+    }
+
     // lucy-latest resolves server-side to lucy-2.5, so it shares its 720p geometry.
     @Test
     fun `lucy latest matches lucy 2_5 geometry`() {
@@ -96,13 +108,14 @@ class RealtimeModelsTest {
         }
     }
 
-    // Fast mode is declared server-side only for lucy-2.5 / lucy-vton-3.5 /
-    // lucy-vton-3.6 (and their -latest aliases). Keep this pinned so no other
-    // model advertises it.
+    // Fast mode is declared server-side only for lucy-2.5 / lucy-2.6 /
+    // lucy-vton-3.5 / lucy-vton-3.6 (and their -latest aliases). Keep this
+    // pinned so no other model advertises it.
     @Test
-    fun `fast speed capability is pinned to lucy 2_5 and lucy vton 3_5 and 3_6 families`() {
+    fun `fast speed capability is pinned to lucy 2_5 and 2_6 and lucy vton 3_5 and 3_6 families`() {
         val fastModels = setOf(
             RealtimeModels.LUCY_2_5,
+            RealtimeModels.LUCY_2_6,
             RealtimeModels.LUCY_LATEST,
             RealtimeModels.LUCY_VTON_3_5,
             RealtimeModels.LUCY_VTON_3_6,
@@ -115,7 +128,7 @@ class RealtimeModelsTest {
             assertTrue("${model.name} must not advertise fast mode", model.supportedSpeeds.isEmpty())
         }
         assertEquals(
-            setOf("lucy-2.5", "lucy-latest", "lucy-vton-3.5", "lucy-vton-3.6", "lucy-vton-latest"),
+            setOf("lucy-2.5", "lucy-2.6", "lucy-latest", "lucy-vton-3.5", "lucy-vton-3.6", "lucy-vton-latest"),
             RealtimeModels.all.filter { Speed.FAST in it.supportedSpeeds }.map { it.name }.toSet(),
         )
     }
