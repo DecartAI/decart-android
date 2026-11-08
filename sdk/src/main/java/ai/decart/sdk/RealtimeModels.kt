@@ -25,7 +25,7 @@ object RealtimeModels {
     val LUCY_VTON_3_6 = RealtimeModel("lucy-vton-3.6", "/v1/stream", 30, 1280, 720, setOf(Speed.FAST))
     val LUCY_RESTYLE_2 = RealtimeModel("lucy-restyle-2", "/v1/stream", 30, 1280, 704)
 
-    // Latest aliases (server-side resolution; lucy-latest -> lucy-2.6, lucy-vton-latest -> lucy-vton-3.6)
+    // Latest aliases (server-side resolution; lucy-vton-latest -> lucy-vton-3.6)
     val LUCY_LATEST = RealtimeModel("lucy-latest", "/v1/stream", 30, 1280, 720, setOf(Speed.FAST))
     val LUCY_VTON_LATEST = RealtimeModel("lucy-vton-latest", "/v1/stream", 30, 1280, 720, setOf(Speed.FAST))
     val LUCY_RESTYLE_LATEST = RealtimeModel("lucy-restyle-latest", "/v1/stream", 30, 1280, 704)
